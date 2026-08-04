@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
-using Price = std::int32_t;
+using Price = std::uint32_t;
 using OrderId = std::uint64_t;
 using Quantity = std::uint32_t;
 
+using Bids = std::uint8_t;
+using Asks = std::uint8_t;

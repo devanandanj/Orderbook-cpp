@@ -13,8 +13,19 @@ project ("Orderbook-cpp")
 
 # Add source to this project's executable.
 add_executable (Orderbook-cpp 
-    "src/orderbook.cpp"
+    "src/main.cpp"
+    "src/Orderbook.cpp"
+    "src/itchparser.cpp"
 )
+
+
+# new: separate test executable
+
+add_executable(test_orderbook test/test_orderbook.cpp  src/orderbook.cpp)
+
+add_executable(test_itchparser test/test_itchparser.cpp src/itchparser.cpp)
+target_compile_features(test_itchparser PRIVATE cxx_std_20)
+
 
 # Add include directories for the project.
 
