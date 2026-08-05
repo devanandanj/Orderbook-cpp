@@ -1,4 +1,13 @@
 ﻿
+/*
+   main.cpp
+   ----------------
+   Reads a MoldUDP64-framed file, deframes the
+   envelope into inner messages, parses each message and applies it
+   against an in-memory Orderbook.
+
+*/
+
 #include <iostream>
 #include <fstream>
 
@@ -8,8 +17,7 @@
 #include "../include/itchparser.h"
 
 
-
-
+// Small functions used to improve readability of code in main.
 Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
 	return Order{ orderId, side, price, quantity };
 }
@@ -22,7 +30,11 @@ bool IsBuyOrder(const Order& order) {
 	return order.side == Side::Buy;
 }
 
-// Reads the entire file into a byte buffer. Returns empty vector on failure.
+/* read_file_bytes
+   Read the entire file into a vector<uint8_t>. Returns an empty vector on
+   failure. This helper is synchronous and loads the whole file into memory
+   which is fine for small test files used by this project.
+*/
 static std::vector<uint8_t> read_file_bytes(const char* path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file) {
@@ -40,9 +52,11 @@ static std::vector<uint8_t> read_file_bytes(const char* path) {
 	return buffer;
 
 }
-// Looks up the side of an existing order by ID, searching both bid and ask sides
-// Reads the entire file into a byte buffer. Returns empty vector on failure.
 
+/* FindOrderSide
+   Look up the side (Buy/Sell) for an existing order id by searching
+   both the bids and asks arrays. Returns true and sets 'side' when found.
+*/
 static bool FindOrderSide(const Orderbook& book, OrderId orderId, Side& side) {
 	for (uint8_t i = 0; i < book.bid_count; i++)
 	{

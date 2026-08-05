@@ -1,6 +1,19 @@
+/*
+   test_orderbook.cpp
+   ----------------
+   Simple program demonstrating the Orderbook API. The output shows
+   the state of the book after a small sequence of operations so a
+   beginner can see how Add, Cancel and Modify behave.
+*/
+
 #include <iostream>
 #include "../include/orderbook.h"
 
+/* PrintBook
+   Dump of the current orderbook contents. This is
+   intentionally simple and prints each order in the bids and asks
+   arrays along with the current counts.
+*/
 static void PrintBook(const Orderbook& book) {
     std::cout << "  bid_count=" << (int)book.bid_count
         << " ask_count=" << (int)book.ask_count << "\n";

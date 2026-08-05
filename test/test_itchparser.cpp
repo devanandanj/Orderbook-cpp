@@ -1,30 +1,30 @@
+/* 
+ * test_itchparser.cpp
+ * Tests for itchparser parsing functions.
+ */
+
 #include <cassert>
 #include <cstdio>
 #include "../include/itchparser.h"
 
-// Define length constant if not already present in itchparser.h
-#ifndef ORDER_EXECUTE_LEN
-#define ORDER_EXECUTE_LEN 31
-#endif
-
 static void test_parse_add() {
-    // Hand-built 'A' message, 36 bytes total.
+    /* Hand-built 'A' message, 36 bytes total. */
     uint8_t buf[ADD_ORDER_LEN] = { 0 };
 
-    buf[0] = 'A';   // Message Type
+    buf[0] = 'A';   /* Message Type */
 
-    // Order Reference Number = 12345 at offset 11 (8 bytes, big-endian)
+    /* Order Reference Number = 12345 at offset 11 (8 bytes, big-endian) */
     buf[11] = 0; buf[12] = 0; buf[13] = 0; buf[14] = 0;
     buf[15] = 0; buf[16] = 0; buf[17] = 0x30; buf[18] = 0x39;
 
-    buf[19] = 'B';   // Buy/Sell Indicator
+    buf[19] = 'B';   /* Buy/Sell Indicator */
 
-    // Shares = 100 at offset 20 (4 bytes)
+    /* Shares = 100 at offset 20 (4 bytes) */
     buf[20] = 0; buf[21] = 0; buf[22] = 0; buf[23] = 100;
 
-    // Stock field (offset 24-31) left as 0 -- not read by parse_add
+    /* Stock field (offset 24-31) left as 0 -- not read by parse_add */
 
-    // Price = 250000 at offset 32 (4 bytes) -> 0x0003D090
+    /* Price = 250000 at offset 32 (4 bytes) -> 0x0003D090 */
     buf[32] = 0x00; buf[33] = 0x03; buf[34] = 0xD0; buf[35] = 0x90;
 
     auto result = parse_add(buf, ADD_ORDER_LEN, 0);
@@ -42,18 +42,18 @@ static void test_parse_add() {
         result->quantity,
         result->price);
 
-    auto truncated = parse_add(buf, 20, 0);  // only 20 bytes, need 36
+    auto truncated = parse_add(buf, 20, 0);  /* only 20 bytes, need 36 */
     assert(!truncated.has_value());
     printf("parse_add (truncated): PASS -- correctly returned nullopt\n");
 }
 
 static void test_parse_delete() {
-    // Hand-built 'D' message, 19 bytes total.
+    /* Hand-built 'D' message, 19 bytes total. */
     uint8_t buf[ORDER_DELETE_LEN] = { 0 };
 
-    buf[0] = 'D';   // Message Type
+    buf[0] = 'D';   /* Message Type */
 
-    // Order Reference Number = 54321 at offset 11 (8 bytes) -> 0xD431
+    /* Order Reference Number = 54321 at offset 11 (8 bytes) -> 0xD431 */
     buf[11] = 0; buf[12] = 0; buf[13] = 0; buf[14] = 0;
     buf[15] = 0; buf[16] = 0; buf[17] = 0xD4; buf[18] = 0x31;
 
@@ -65,29 +65,29 @@ static void test_parse_delete() {
     printf("parse_delete: PASS\n");
     printf("  orderId=%llu\n", (unsigned long long) * result);
 
-    auto truncated = parse_delete(buf, 15, 0);  // only 15 bytes, need 19
+    auto truncated = parse_delete(buf, 15, 0);  /* only 15 bytes, need 19 */
     assert(!truncated.has_value());
     printf("parse_delete (truncated): PASS -- correctly returned nullopt\n");
 }
 
 static void test_parse_replace() {
-    // Hand-built 'U' message, 35 bytes total.
+    /* Hand-built 'U' message, 35 bytes total. */
     uint8_t buf[ORDER_REPLACE_LEN] = { 0 };
 
-    buf[0] = 'U';   // Message Type
+    buf[0] = 'U';   /* Message Type */
 
-    // Original Order Reference Number = 12345 at offset 11 -> 0x3039
+    /* Original Order Reference Number = 12345 at offset 11 -> 0x3039 */
     buf[11] = 0; buf[12] = 0; buf[13] = 0; buf[14] = 0;
     buf[15] = 0; buf[16] = 0; buf[17] = 0x30; buf[18] = 0x39;
 
-    // New Order Reference Number = 67890 at offset 19 -> 0x00010932
+    /* New Order Reference Number = 67890 at offset 19 -> 0x00010932 */
     buf[19] = 0; buf[20] = 0; buf[21] = 0; buf[22] = 0;
     buf[23] = 0; buf[24] = 0x01; buf[25] = 0x09; buf[26] = 0x32;
 
-    // Shares = 200 at offset 27 (4 bytes)
+    /* Shares = 200 at offset 27 (4 bytes) */
     buf[27] = 0; buf[28] = 0; buf[29] = 0; buf[30] = 200;
 
-    // Price = 300000 at offset 31 (4 bytes) -> 0x000493E0
+    /* Price = 300000 at offset 31 (4 bytes) -> 0x000493E0 */
     buf[31] = 0x00; buf[32] = 0x04; buf[33] = 0x93; buf[34] = 0xE0;
 
     auto result = parse_replace(buf, ORDER_REPLACE_LEN, 0);
@@ -105,25 +105,25 @@ static void test_parse_replace() {
         result->quantity,
         result->price);
 
-    auto truncated = parse_replace(buf, 30, 0);  // only 30 bytes, need 35
+    auto truncated = parse_replace(buf, 30, 0);  /* only 30 bytes, need 35 */
     assert(!truncated.has_value());
     printf("parse_replace (truncated): PASS -- correctly returned nullopt\n");
 }
 
 static void test_parse_execute() {
-    // Hand-built 'E' message, 31 bytes total.
+    /* Hand-built 'E' message, 31 bytes total. */
     uint8_t buf[ORDER_EXECUTE_LEN] = { 0 };
 
-    buf[0] = 'E';   // Message Type
+    buf[0] = 'E';   /* Message Type */
 
-    // Order Reference Number = 98765 at offset 11 (8 bytes) -> 0x0181CD
+    /* Order Reference Number = 98765 at offset 11 (8 bytes) -> 0x0181CD */
     buf[11] = 0; buf[12] = 0; buf[13] = 0; buf[14] = 0;
     buf[15] = 0; buf[16] = 0x01; buf[17] = 0x81; buf[18] = 0xCD;
 
-    // Executed Shares = 50 at offset 19 (4 bytes)
+    /* Executed Shares = 50 at offset 19 (4 bytes) */
     buf[19] = 0; buf[20] = 0; buf[21] = 0; buf[22] = 50;
 
-    // Match Number = 112233 at offset 23 (8 bytes) -> 0x01B669
+    /* Match Number = 112233 at offset 23 (8 bytes) -> 0x01B669 */
     buf[23] = 0; buf[24] = 0; buf[25] = 0; buf[26] = 0;
     buf[27] = 0; buf[28] = 0x01; buf[29] = 0xB6; buf[30] = 0x69;
 
@@ -140,7 +140,7 @@ static void test_parse_execute() {
         result->executedQuantity,
         (unsigned long long)result->matchId);
 
-    auto truncated = parse_execute(buf, 20, 0);  // only 20 bytes, need 31
+    auto truncated = parse_execute(buf, 20, 0);  /* only 20 bytes, need 31 */
     assert(!truncated.has_value());
     printf("parse_execute (truncated): PASS -- correctly returned nullopt\n");
 }

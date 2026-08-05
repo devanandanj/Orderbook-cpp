@@ -1,17 +1,22 @@
+/*
+   moldudp64.cpp
+   ----------------
+   Implementation of deframe_moldudp64 declared in include/moldudp64.h.
+   This file performs a simple, bounds-checked pass over a MoldUDP64
+   envelope and returns non-owning views into the inner messages.
+*/
+
 #include "../include/moldudp64.h"
 
 std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len) {
 	std::vector<MoldUDPMessage> messages;
-	
+
 	if (buf_len < MOLDUDP64_HEADER_LEN)
 	{
-		return messages; //empty - too short for even header
+		return messages;
 	}
 
 	uint16_t message_count = read_u16_be(buf, MOLDUDP64_MSGCOUNT_OFFSET);
-	
-	// Out-of-scope sentinel values for file-based synthetic input.
-	// Generator is responsible for never producing these.
 
 	if (message_count == MOLDUDP64_HEARTBEAT || message_count == MOLDUDP64_END_OF_SESSION)
 	{
@@ -26,10 +31,10 @@ std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len
 		{
 			return {};
 		}
-		
+
 		uint16_t msg_len = read_u16_be(buf, cursor);
 		cursor += 2;
-		
+
 		if (cursor + msg_len > buf_len)
 		{
 			return {};
