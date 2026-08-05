@@ -1,7 +1,11 @@
 #include <cassert>
 #include <cstdio>
-
 #include "../include/itchparser.h"
+
+// Define length constant if not already present in itchparser.h
+#ifndef ORDER_EXECUTE_LEN
+#define ORDER_EXECUTE_LEN 31
+#endif
 
 static void test_parse_add() {
     // Hand-built 'A' message, 36 bytes total.
@@ -18,7 +22,7 @@ static void test_parse_add() {
     // Shares = 100 at offset 20 (4 bytes)
     buf[20] = 0; buf[21] = 0; buf[22] = 0; buf[23] = 100;
 
-    // Stock field (offset 24-31) left as 0 — not read by parse_add
+    // Stock field (offset 24-31) left as 0 -- not read by parse_add
 
     // Price = 250000 at offset 32 (4 bytes) -> 0x0003D090
     buf[32] = 0x00; buf[33] = 0x03; buf[34] = 0xD0; buf[35] = 0x90;
@@ -106,10 +110,46 @@ static void test_parse_replace() {
     printf("parse_replace (truncated): PASS -- correctly returned nullopt\n");
 }
 
+static void test_parse_execute() {
+    // Hand-built 'E' message, 31 bytes total.
+    uint8_t buf[ORDER_EXECUTE_LEN] = { 0 };
+
+    buf[0] = 'E';   // Message Type
+
+    // Order Reference Number = 98765 at offset 11 (8 bytes) -> 0x0181CD
+    buf[11] = 0; buf[12] = 0; buf[13] = 0; buf[14] = 0;
+    buf[15] = 0; buf[16] = 0x01; buf[17] = 0x81; buf[18] = 0xCD;
+
+    // Executed Shares = 50 at offset 19 (4 bytes)
+    buf[19] = 0; buf[20] = 0; buf[21] = 0; buf[22] = 50;
+
+    // Match Number = 112233 at offset 23 (8 bytes) -> 0x01B669
+    buf[23] = 0; buf[24] = 0; buf[25] = 0; buf[26] = 0;
+    buf[27] = 0; buf[28] = 0x01; buf[29] = 0xB6; buf[30] = 0x69;
+
+    auto result = parse_execute(buf, ORDER_EXECUTE_LEN, 0);
+
+    assert(result.has_value());
+    assert(result->orderId == 98765);
+    assert(result->executedQuantity == 50);
+    assert(result->matchId == 112233);
+
+    printf("parse_execute: PASS\n");
+    printf("  orderId=%llu executedQuantity=%u matchId=%llu\n",
+        (unsigned long long)result->orderId,
+        result->executedQuantity,
+        (unsigned long long)result->matchId);
+
+    auto truncated = parse_execute(buf, 20, 0);  // only 20 bytes, need 31
+    assert(!truncated.has_value());
+    printf("parse_execute (truncated): PASS -- correctly returned nullopt\n");
+}
+
 int main() {
     test_parse_add();
     test_parse_delete();
     test_parse_replace();
+    test_parse_execute();
 
     printf("\nAll itchparser tests PASSED\n");
     return 0;

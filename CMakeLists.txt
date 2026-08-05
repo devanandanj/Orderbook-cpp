@@ -16,15 +16,35 @@ add_executable (Orderbook-cpp
     "src/main.cpp"
     "src/Orderbook.cpp"
     "src/itchparser.cpp"
+    "src/moldudp64.cpp"
+
 )
 
 
-# new: separate test executable
-
+# test orderbook
 add_executable(test_orderbook test/test_orderbook.cpp  src/orderbook.cpp)
 
 add_executable(test_itchparser test/test_itchparser.cpp src/itchparser.cpp)
 target_compile_features(test_itchparser PRIVATE cxx_std_20)
+
+# mold udp
+add_executable(test_moldudp64
+    test/test_moldudp64.cpp
+    src/moldudp64.cpp
+    src/itchparser.cpp   # moldudp64.cpp depends on read_u16_be from here
+)
+
+target_include_directories(test_moldudp64 PRIVATE include)
+target_compile_features(test_moldudp64 PRIVATE cxx_std_20)
+
+# Generator Test 
+add_executable(gen_test
+    test/gen_test.cpp
+)
+
+target_include_directories(test_moldudp64 PRIVATE include)
+target_compile_features(test_moldudp64 PRIVATE cxx_std_20)
+
 
 
 # Add include directories for the project.

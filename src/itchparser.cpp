@@ -55,3 +55,24 @@ std::optional<ReplaceFields> parse_replace(const uint8_t* buf, size_t buf_len, s
 	return fields;
 
 }
+
+//Execute Order
+std::optional<OrderExecute> parse_execute(const uint8_t* buf, size_t buf_len, size_t offset) {
+	if (buf_len < offset + 31)
+	{
+		return std::nullopt;
+	}
+
+	const uint8_t* p = buf + offset;
+
+	if (p[0] != 'E')
+	{
+		return std::nullopt;
+	}
+	OrderExecute exec;
+	exec.orderId = read_u64_be(buf, offset + 11);
+	exec.executedQuantity = read_u32_be(buf, offset + 19);
+	exec.matchId = read_u64_be(buf, offset + 23);
+
+	return exec;
+}

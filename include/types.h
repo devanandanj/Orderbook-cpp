@@ -26,3 +26,9 @@ struct LevelInfo {
     Price    price_;
     Quantity quantity_;
 };
+
+struct OrderExecute{
+    OrderId orderId;
+    Quantity executedQuantity;
+    OrderId matchId;
+};

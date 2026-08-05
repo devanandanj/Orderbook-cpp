@@ -54,3 +54,36 @@ void ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
 
     AddOrder(orderbook, new_order);
 }
+
+bool ExecuteOrder(Orderbook* orderbook, const OrderExecute& exec) {
+    // bids
+    int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, exec.orderId);
+    if (idx != -1)
+    {
+        if (exec.executedQuantity >= orderbook->bids[idx].quantity)
+        {
+            //fully filled - removed from orderbook
+            orderbook->bids[idx] = orderbook->bids[orderbook->bid_count - 1];
+            orderbook->bid_count--;
+        }
+        else
+        {
+            orderbook->bids[idx].quantity -= exec.executedQuantity;
+        }
+        return true;
+    }
+    // asks
+    idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, exec.orderId);
+    if (idx != -1) {
+        if (exec.executedQuantity >= orderbook->asks[idx].quantity) {
+            orderbook->asks[idx] = orderbook->asks[orderbook->ask_count - 1];
+            orderbook->ask_count--;
+        }
+        else {
+            orderbook->asks[idx].quantity -= exec.executedQuantity;
+        }
+        return true;
+    }
+
+    return false;   // order not found
+}

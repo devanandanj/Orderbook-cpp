@@ -41,5 +41,13 @@ struct ReplaceFields {
 	Quantity quantity;
 	//caller must look side up - intentionally left out
 };
-
 std::optional<ReplaceFields> parse_replace(const uint8_t* buf, size_t buf_len, size_t offset);
+
+//Execute
+struct ExecuteOrder
+{
+	OrderId orderId;
+	Quantity ExecutedQuantity;
+	OrderId matchId;
+};
+std::optional<OrderExecute> parse_execute(const  uint8_t* buf, size_t buf_len, size_t offset);

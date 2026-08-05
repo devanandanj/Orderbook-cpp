@@ -15,3 +15,4 @@ struct Orderbook {
 void AddOrder(Orderbook* orderbook, const Order& order);
 bool CancelOrder(Orderbook* orderbook, OrderId order);
 void ModifyOrder(Orderbook* orderbook, const OrderModify& mod);
+bool ExecuteOrder(Orderbook* orderbook, const OrderExecute& exec);
