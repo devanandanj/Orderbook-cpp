@@ -117,7 +117,14 @@ int main(int argc, char** argv) {
 				std::cerr << "Message " << i << ": malformed 'A' message -- aborting." << std::endl;
 				return 1;
 			}
-			AddOrder(&book, *order);
+			bool result = AddOrder(&book, *order);
+			if (!result)
+			{
+				std::cerr << "Message" << i <<
+					": AddOrder failed (book full) for Order ID = "
+					<< (unsigned long long)order->orderId << "-- aborting" << std::endl;
+				return 1;
+			}
 			break;
 		}
 		case 'D': {
@@ -130,7 +137,7 @@ int main(int argc, char** argv) {
 			bool result = CancelOrder(&book, *orderId);
 			if (!result)
 			{
-				std::cerr << "Message " << i << ": CancelOrder failed for orderId = "
+				std::cerr << "Message " << i << ": CancelOrder failed for Order ID = "
 					<< (unsigned long long) * orderId << " -- aborting." << std::endl;
 				return 1;
 			}
@@ -146,19 +153,27 @@ int main(int argc, char** argv) {
 			Side side;
 			if (!FindOrderSide(book, fields->OldOrderId, side))
 			{
-				std::cerr << "Message " << i << ": Replace references unknown oldOrderId = "
+				std::cerr << "Message " << i << ": Replace references unknown Old Order ID = "
 					<< (unsigned long long)fields->OldOrderId << " -- aborting." << std::endl;
 				return 1;
 			}
 			OrderModify mod{ fields->OldOrderId, fields->NewOrderId, side, fields->price, fields->quantity };
-			ModifyOrder(&book, mod);
+			bool result = ModifyOrder(&book, mod);
+			if (!result)
+			{
+				std::cerr << "Message " << i
+					<< ": ModifyOrder failed (book full after cancel) for New Order ID "
+					<< (unsigned long long)fields->NewOrderId << " --aborting" << std::endl;
+				return 1;
+			}
 			break;
 		}
 		case 'E': {
 			auto exec = parse_execute(msg.data, msg.length, 0);
 			if (!exec.has_value())
 			{
-				std::cerr << "Message " << i << ": malformed 'E' message -- aborting." << std::endl;
+				std::cerr << "Message " << i 
+					<< ": malformed 'E' message -- aborting." << std::endl;
 				return 1;
 			}
 			OrderExecute order_exec{ exec->orderId, exec->executedQuantity, exec->matchId };
@@ -166,21 +181,23 @@ int main(int argc, char** argv) {
 			bool result = ExecuteOrder(&book, order_exec);
 			if (!result)
 			{
-				std::cerr << "Message " << i << ": ExecuteOrder failed for orderId = "
+				std::cerr << "Message " << i << ": ExecuteOrder failed for Order ID = "
 					<< (unsigned long long)exec->orderId << " -- aborting." << std::endl;
 				return 1;
 			}
 			break;
 		}
 		default: {
-			std::cerr << "Message " << i << ": unknown message type '" << msg_type << "' -- aborting." << std::endl;
+			std::cerr << "Message " << i 
+				<< ": unknown message type'" << msg_type << "' -- aborting." << std::endl;
 			return 1;
 		}
 		}
 	}
 
 	std::cout << "Processed " << messages.size() << " messages successfully." << std::endl;
-	std::cout << "Final book state: bids=" << static_cast<int>(book.bid_count) << " asks=" << static_cast<int>(book.ask_count) << std::endl;
+	std::cout << "Final book state: bids=" 
+		<< static_cast<int>(book.bid_count) << " asks=" << static_cast<int>(book.ask_count) << std::endl;
 
 	return 0;
 }

@@ -36,7 +36,7 @@ struct Orderbook {
    Inserts a new order into the book. If the corresponding side's array
    is full the function does nothing.
 */
-void AddOrder(Orderbook* orderbook, const Order& order);
+bool AddOrder(Orderbook* orderbook, const Order& order);
 
 /* CancelOrder
    Removes an order by order id if present. Returns true when an order

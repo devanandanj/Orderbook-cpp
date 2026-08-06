@@ -24,17 +24,18 @@ static int FindOrderIndex(const Order* orders, uint8_t count, OrderId orderId) {
    Appends the order to the correct side's array if there is capacity.
    If the array is full the function returns without adding the order.
 */
-void AddOrder(Orderbook* orderbook, const Order& order) {
+bool AddOrder(Orderbook* orderbook, const Order& order) {
     if (order.side == Side::Buy) {
-        if (orderbook->bid_count >= 32) return;
+        if (orderbook->bid_count >= 32) return false;
         orderbook->bids[orderbook->bid_count] = order;
         orderbook->bid_count++;
     }
     else {
-        if (orderbook->ask_count >= 32) return;
+        if (orderbook->ask_count >= 32) return false;
         orderbook->asks[orderbook->ask_count] = order;
         orderbook->ask_count++;
     }
+    return true;
 }
 
 /* CancelOrder
@@ -75,8 +76,7 @@ bool ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
     new_order.price = mod.price;
     new_order.quantity = mod.quantity;
 
-    AddOrder(orderbook, new_order);
-    return true;
+    return AddOrder(orderbook, new_order);
 }
 
 /* ExecuteOrder
