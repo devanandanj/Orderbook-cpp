@@ -43,8 +43,8 @@ add_executable(gen_test
     test/gen_test.cpp
 )
 
-target_include_directories(test_moldudp64 PRIVATE include)
-target_compile_features(test_moldudp64 PRIVATE cxx_std_20)
+target_include_directories(gen_test PRIVATE include)
+target_compile_features(gen_test PRIVATE cxx_std_20)
 
 
 

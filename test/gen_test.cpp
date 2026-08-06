@@ -1,155 +1,228 @@
 /*
-   gen_test.cpp
+   test.cpp
    ----------------
-   Small helper program that generates a MoldUDP64 test file containing
-   several hand-crafted ITCH messages. The resulting binary can be fed
-   into the main program to exercise parsing and orderbook behavior.
+   Standalone MoldUDP64 test-feed generator. Not part of the main
+   Orderbook-cpp pipeline -- has its own main(), so it must be built as
+   a SEPARATE executable target (see CMakeLists.txt note at the bottom
+   of this file). Do NOT add this to the same target as src/main.cpp.
 
-   The helper functions below append unsigned integers in big-endian
-   byte order to a std::vector<uint8_t> which is used as the packet
-   payload builder.
+   This particular scenario is a stress test for the 32-order-per-side
+   capacity + eviction logic added to AddOrder/ModifyOrder. It builds a
+   single deterministic message sequence that walks through every new
+   code path so the resulting trace.txt can be checked by hand,
+   message-by-message, against the table in the commit/PR description.
+
+   Message-by-message plan (see README table for the human-readable
+   version -- kept in sync here as inline comments):
+	 0-31   Add 32 Buy orders (id 1..32), strictly increasing price.
+			Fills the bid side exactly to capacity.
+			id1 = worst (lowest price), id32 = best (highest price).
+	 32     Add Buy id33, price higher than everyone -> expect EVICTED,
+			victim should be id1 (the worst).
+	 33     Add Buy id34, price lower than the new worst (id2) ->
+			expect DISCARDED (not competitive enough).
+	 34     Add Buy id35, price exactly ties the current worst (id2) ->
+			expect DISCARDED (first-come-first-served: id2 keeps its
+			place on a tie).
+	 35     Cancel id2 -> frees one bid slot (count 32 -> 31).
+	 36     Add Buy id36, deliberately very low price, but there is now
+			room -> expect INSERTED normally. This proves the
+			competitiveness check only applies when the side is full.
+	 37     Execute id36, partial fill -> order stays resting with a
+			reduced quantity.
+	 38     Replace id36 -> id200 -> expect REPLACED (room is
+			available, so this is a plain cancel+insert, no eviction
+			needed).
+	 39-41  Add 3 Sell orders -> sanity check that the ask side is
+			completely unaffected by everything that happened on the
+			bid side (sides are independent 32-slot pools).
+
+   Expected final book state printed by Orderbook-cpp: bids=32 asks=3.
 */
 
-#include <cstdio>
 #include <cstdint>
+#include <cstddef>
+#include <cassert>
 #include <vector>
-#include <cstring>
+#include <fstream>
+#include <iostream>
 
-/* Append a 16-bit unsigned integer in big-endian order to buf. */
-static void push_u16_be(std::vector<uint8_t>& buf, uint16_t val) {
-    buf.push_back((val >> 8) & 0xFF);
-    buf.push_back(val & 0xFF);
+#include "../include/itchparser.h"   // for ADD_ORDER_LEN etc. -- keeps
+// this generator's message sizes
+// locked to the same constants
+// the parser checks against, so
+// the two can never silently drift
+// apart.
+
+using Bytes = std::vector<uint8_t>;
+
+static void write_u16_be(Bytes& buf, uint16_t v) {
+	buf.push_back(uint8_t(v >> 8));
+	buf.push_back(uint8_t(v & 0xFF));
 }
 
-/* Append a 32-bit unsigned integer in big-endian order to buf. */
-static void push_u32_be(std::vector<uint8_t>& buf, uint32_t val) {
-    buf.push_back((val >> 24) & 0xFF);
-    buf.push_back((val >> 16) & 0xFF);
-    buf.push_back((val >> 8) & 0xFF);
-    buf.push_back(val & 0xFF);
+static void write_u32_be(Bytes& buf, uint32_t v) {
+	write_u16_be(buf, uint16_t(v >> 16));
+	write_u16_be(buf, uint16_t(v & 0xFFFF));
 }
 
-/* Append a 64-bit unsigned integer in big-endian order to buf. */
-static void push_u64_be(std::vector<uint8_t>& buf, uint64_t val) {
-    for (int i = 56; i >= 0; i -= 8) {
-        buf.push_back((val >> i) & 0xFF);
-    }
+static void write_u64_be(Bytes& buf, uint64_t v) {
+	write_u32_be(buf, uint32_t(v >> 32));
+	write_u32_be(buf, uint32_t(v & 0xFFFFFFFFu));
 }
 
-/* Build an ITCH 'A' (Add Order) message payload. The returned vector
-   contains the full message bytes (36 bytes in the test format). */
-static std::vector<uint8_t> make_itch_add(uint64_t orderId, char side, uint32_t qty, uint32_t price) {
-    std::vector<uint8_t> msg;
-    msg.push_back('A');
-    push_u16_be(msg, 1);                  /* Stock Locate */
-    push_u16_be(msg, 0);                  /* Tracking Number */
-    push_u64_be(msg, 1000000);            /* Timestamp (dummy) -> 6 bytes */
-    msg.erase(msg.end() - 2, msg.end());
-    push_u64_be(msg, orderId);
-    msg.push_back(static_cast<uint8_t>(side));
-    push_u32_be(msg, qty);
-
-    const char* stock = "AAPL    ";
-    msg.insert(msg.end(), stock, stock + 8);
-
-    push_u32_be(msg, price);
-    return msg;
+/* build_add
+   Layout matches parse_add's offsets exactly:
+   [0]      type 'A'
+   [1..10]  unused (10 bytes)
+   [11..18] orderId (u64 BE)
+   [19]     side 'B' or 'S'
+   [20..23] quantity (u32 BE)
+   [24..31] unused (8 bytes)
+   [32..35] price (u32 BE)
+   total: 36 bytes == ADD_ORDER_LEN
+*/
+static Bytes build_add(uint64_t orderId, char side, uint32_t qty, uint32_t price) {
+	Bytes m;
+	m.push_back('A');
+	for (std::size_t i = 0; i < 10; i++) m.push_back(0);
+	write_u64_be(m, orderId);
+	m.push_back(uint8_t(side));
+	write_u32_be(m, qty);
+	for (std::size_t i = 0; i < 8; i++) m.push_back(0);
+	write_u32_be(m, price);
+	assert(m.size() == ADD_ORDER_LEN);
+	return m;
 }
 
-/* Build an ITCH 'U' (Replace Order) message payload. */
-static std::vector<uint8_t> make_itch_replace(uint64_t oldOrderId, uint64_t newOrderId, uint32_t qty, uint32_t price) {
-    std::vector<uint8_t> msg;
-    msg.push_back('U');
-    push_u16_be(msg, 1);                  /* Stock Locate */
-    push_u16_be(msg, 0);                  /* Tracking Number */
-    push_u64_be(msg, 1000000);            /* Timestamp -> 6 bytes */
-    msg.erase(msg.end() - 2, msg.end());
-    push_u64_be(msg, oldOrderId);
-    push_u64_be(msg, newOrderId);
-    push_u32_be(msg, qty);
-    push_u32_be(msg, price);
-    return msg;
+/* build_delete
+   [0] 'D', [1..10] unused, [11..18] orderId (u64 BE)
+   total: 19 bytes == ORDER_DELETE_LEN
+*/
+static Bytes build_delete(uint64_t orderId) {
+	Bytes m;
+	m.push_back('D');
+	for (std::size_t i = 0; i < 10; i++) m.push_back(0);
+	write_u64_be(m, orderId);
+	assert(m.size() == ORDER_DELETE_LEN);
+	return m;
 }
 
-/* Build an ITCH 'D' (Delete Order) message payload. */
-static std::vector<uint8_t> make_itch_delete(uint64_t orderId) {
-    std::vector<uint8_t> msg;
-    msg.push_back('D');
-    push_u16_be(msg, 1);                  /* Stock Locate */
-    push_u16_be(msg, 0);                  /* Tracking Number */
-    push_u64_be(msg, 1000000);            /* Timestamp -> 6 bytes */
-    msg.erase(msg.end() - 2, msg.end());
-    push_u64_be(msg, orderId);
-    return msg;
+/* build_replace
+   [0] 'U', [1..10] unused,
+   [11..18] OldOrderId (u64 BE), [19..26] NewOrderId (u64 BE),
+   [27..30] quantity (u32 BE), [31..34] price (u32 BE)
+   total: 35 bytes == ORDER_REPLACE_LEN
+*/
+static Bytes build_replace(uint64_t oldId, uint64_t newId, uint32_t qty, uint32_t price) {
+	Bytes m;
+	m.push_back('U');
+	for (std::size_t i = 0; i < 10; i++) m.push_back(0);
+	write_u64_be(m, oldId);
+	write_u64_be(m, newId);
+	write_u32_be(m, qty);
+	write_u32_be(m, price);
+	assert(m.size() == ORDER_REPLACE_LEN);
+	return m;
 }
 
-/* Build an ITCH 'E' (Order Executed) message payload. */
-static std::vector<uint8_t> make_itch_execute(uint64_t orderId, uint32_t execQty, uint64_t matchId) {
-    std::vector<uint8_t> msg;
-    msg.push_back('E');
-    push_u16_be(msg, 1);                  /* Stock Locate */
-    push_u16_be(msg, 0);                  /* Tracking Number */
-    push_u64_be(msg, 1000000);            /* Timestamp -> 6 bytes */
-    msg.erase(msg.end() - 2, msg.end());
-    push_u64_be(msg, orderId);
-    push_u32_be(msg, execQty);
-    push_u64_be(msg, matchId);
-    return msg;
+/* build_execute
+   [0] 'E', [1..10] unused,
+   [11..18] orderId (u64 BE), [19..22] executedQuantity (u32 BE),
+   [23..30] matchId (u64 BE)
+   total: 31 bytes == ORDER_EXECUTE_LEN
+*/
+static Bytes build_execute(uint64_t orderId, uint32_t execQty, uint64_t matchId) {
+	Bytes m;
+	m.push_back('E');
+	for (std::size_t i = 0; i < 10; i++) m.push_back(0);
+	write_u64_be(m, orderId);
+	write_u32_be(m, execQty);
+	write_u64_be(m, matchId);
+	assert(m.size() == ORDER_EXECUTE_LEN);
+	return m;
 }
 
-int main(int argc, char** argv) {
-    const char* filename = (argc > 1) ? argv[1] : "test_feed.mold";
+/* build_mold_file
+   Wraps a list of inner messages in a MoldUDP64 envelope:
+   [0..9]   session id (10 bytes, zero-filled -- arbitrary for a
+			file-based test feed)
+   [10..17] sequence number (8 bytes, zero-filled)
+   [18..19] message count (u16 BE)
+   then, per message: [2-byte length][message bytes]
+*/
+static Bytes build_mold_file(const std::vector<Bytes>& messages) {
+	Bytes buf;
+	for (std::size_t i = 0; i < 10; i++) buf.push_back(0);   // session id
+	for (std::size_t i = 0; i < 8; i++) buf.push_back(0);    // sequence number
+	write_u16_be(buf, uint16_t(messages.size()));    // message count
 
-    std::vector<std::vector<uint8_t>> itch_msgs;
+	for (const Bytes& m : messages) {
+		write_u16_be(buf, uint16_t(m.size()));
+		buf.insert(buf.end(), m.begin(), m.end());
+	}
+	return buf;
+}
 
-    /* Test case sequence: a small set of messages to exercise the
-       parser and orderbook logic. Each vector is a single ITCH
-       message payload constructed by the helper functions above. */
-    /* 1. Add Bid: ID 101, Buy, 100 shares @ $150.00 */
-    itch_msgs.push_back(make_itch_add(101, 'B', 100, 1500000));
-    /* 2. Add Ask: ID 102, Sell, 50 shares @ $151.00 */
-    itch_msgs.push_back(make_itch_add(102, 'S', 50, 1510000));
-    /* 3. Add Bid: ID 104, Buy, 200 shares @ $149.50 */
-    itch_msgs.push_back(make_itch_add(104, 'B', 200, 1495000));
+int main() {
+	std::vector<Bytes> messages;
 
-    /* 4. Partial Execution ('E'): Execute 40 shares of Order 101 (60 shares remain) */
-    itch_msgs.push_back(make_itch_execute(101, 40, 900001));
+	// --- 0-31: fill the bid side to exactly 32 orders -----------------
+	// Prices strictly increasing -> id1 is worst (lowest), id32 is best.
+	for (uint64_t id = 1; id <= 32; id++) {
+		uint32_t price = 1000000 + uint32_t(id - 1) * 1000;
+		messages.push_back(build_add(id, 'B', 10, price));
+	}
 
-    /* 5. Full Execution ('E'): Execute remaining 60 shares of Order 101 (Order 101 removed) */
-    itch_msgs.push_back(make_itch_execute(101, 60, 900002));
+	// --- 32: Add id33, higher price than everyone -> expect EVICTED ---
+	// Victim should be id1 (worst / lowest price).
+	messages.push_back(build_add(33, 'B', 10, 1050000));
 
-    /* 6. Replace Order ('U'): ID 104 -> ID 105, 250 shares @ $150.00 */
-    itch_msgs.push_back(make_itch_replace(104, 105, 250, 1500000));
+	// --- 33: Add id34, price below the new worst (id2 @ 1001000) ------
+	// Expect DISCARDED (not competitive).
+	messages.push_back(build_add(34, 'B', 10, 900000));
 
-    /* 7. Delete Order ('D'): Delete Ask Order 102 */
-    itch_msgs.push_back(make_itch_delete(102));
+	// --- 34: Add id35, price exactly ties the current worst (id2) -----
+	// Expect DISCARDED (FCFS: id2, already resting, keeps its place).
+	messages.push_back(build_add(35, 'B', 10, 1001000));
 
-    /* Build MoldUDP64 Buffer: session id (10 bytes), sequence number
-       (8 bytes), message count (2 bytes) followed by message blocks
-       (each with a 2-byte length prefix). */
-    std::vector<uint8_t> mold_packet;
+	// --- 35: Cancel id2 -> frees one bid slot (32 -> 31) ---------------
+	messages.push_back(build_delete(2));
 
-    char session[10] = "SESSION01";
-    mold_packet.insert(mold_packet.end(), session, session + 10);
-    push_u64_be(mold_packet, 1);                    /* Sequence Number = 1 */
-    push_u16_be(mold_packet, static_cast<uint16_t>(itch_msgs.size()));     /* Message Count = 7 */
+	// --- 36: Add id36, deliberately very low price, room available ----
+	// Expect INSERTED (no competitiveness check applies -- side isn't
+	// full at this point).
+	messages.push_back(build_add(36, 'B', 5, 800000));
 
-    for (const auto& msg : itch_msgs) {
-        push_u16_be(mold_packet, static_cast<uint16_t>(msg.size()));
-        mold_packet.insert(mold_packet.end(), msg.begin(), msg.end());
-    }
+	// --- 37: Execute id36, partial fill (qty 5 -> 3) -------------------
+	messages.push_back(build_execute(36, 2, /*matchId=*/9001));
 
-    FILE* f = fopen(filename, "wb");
-    if (!f) {
-        fprintf(stderr, "Failed to open file %s for writing\n", filename);
-        return 1;
-    }
+	// --- 38: Replace id36 -> id200 -------------------------------------
+	// Room is available, so this should be a plain REPLACED (no
+	// eviction needed).
+	messages.push_back(build_replace(36, 200, 50, 1200000));
 
-    fwrite(mold_packet.data(), 1, mold_packet.size(), f);
-    fclose(f);
+	// --- 39-41: Add 3 Sell orders --------------------------------------
+	// Control group: confirms the ask side is entirely unaffected by
+	// everything that just happened on the bid side.
+	messages.push_back(build_add(101, 'S', 20, 2000000));
+	messages.push_back(build_add(102, 'S', 20, 1990000));
+	messages.push_back(build_add(103, 'S', 20, 2010000));
 
-    printf("Successfully generated MoldUDP64 test file '%s' (%zu bytes, %zu ITCH messages).\n",
-        filename, mold_packet.size(), itch_msgs.size());
+	Bytes file = build_mold_file(messages);
 
-    return 0;
+	constexpr const char* outPath = "stress_test.mold";
+	std::ofstream out(outPath, std::ios::binary);
+	if (!out) {
+		std::cerr << "Failed to open " << outPath << " for writing." << std::endl;
+		return 1;
+	}
+	out.write(reinterpret_cast<const char*>(file.data()), std::streamsize(file.size()));
+	out.close();
+
+	std::cout << "Wrote " << messages.size() << " messages ("
+		<< file.size() << " bytes) to " << outPath << std::endl;
+	std::cout << "Expected final book state: bids=32 asks=3" << std::endl;
+
+	return 0;
 }
