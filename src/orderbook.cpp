@@ -92,7 +92,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
         arr = orderbook->asks;
         count = &orderbook->ask_count;
     }
-    if (*count < 32)
+    if (*count < MAX_ORDERS_PER_SIDE)
     {
         arr[*count] = order;
         (*count)++;

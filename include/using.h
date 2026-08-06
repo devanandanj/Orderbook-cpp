@@ -18,3 +18,5 @@ using Quantity = std::uint32_t;
 */
 using Bids = std::uint8_t;
 using Asks = std::uint8_t;
+
+constexpr uint8_t MAX_ORDERS_PER_SIDE = 32;

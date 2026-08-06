@@ -29,20 +29,20 @@ void WriteTraceEntry(std::ostream& out, size_t msgIndex, char msgType, OrderId o
 {
     out << "MSG," << msgIndex << ',' << msgType << ',' << orderId << ','
         << (accepted ? "OK" : "REJECTED") << ','
-        << (reason ? reason : "") << std::endl;
+        << (reason ? reason : "") << '\n';
 
     SortedOrders bids = SortSide(book.bids, book.bid_count);
     for (uint8_t i = 0; i < bids.count; i++)
     {
         const Order& o = bids.orders[i];
-        out << "BID," << o.orderId << ',' << o.price << ',' << o.quantity << std::endl;
+        out << "BID," << o.orderId << ',' << o.price << ',' << o.quantity << '\n';
     }
 
     SortedOrders asks = SortSide(book.asks, book.ask_count);
     for (uint8_t i = 0; i < asks.count; i++)
     {
         const Order& o = asks.orders[i];
-        out << "ASK," << o.orderId << ',' << o.price << ',' << o.quantity << std::endl;
+        out << "ASK," << o.orderId << ',' << o.price << ',' << o.quantity << '\n';
     }
-    out << "END" << std::endl;
+    out << "END\n\n" ;
 }
