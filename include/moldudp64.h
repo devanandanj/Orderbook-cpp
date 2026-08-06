@@ -56,7 +56,7 @@ static constexpr uint16_t MOLDUDP64_END_OF_SESSION = 0xFFFF;
 struct MoldUDPMessage
 {
 	const uint8_t* data;
-	const uint16_t length;
+	uint16_t length;
 };
 
 /* deframe_moldudp64

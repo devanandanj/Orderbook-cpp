@@ -31,6 +31,11 @@ std::optional<Order> parse_add(const uint8_t* buf, size_t buf_len, size_t offset
 		return std::nullopt;
 	}
 
+	if (buf[offset] != 'A')
+	{
+		return std::nullopt;
+	}
+
 	/* Message Type at offset+0 ('A') — not read here; dispatch loop
 	   in main.cpp is responsible for routing based on this byte
 	   before calling parse_add. */
@@ -52,6 +57,12 @@ std::optional<uint64_t> parse_delete(const uint8_t* buf, size_t buf_len, size_t 
 	{
 		return std::nullopt;
 	}
+
+	if (buf[offset] != 'D')
+	{
+		return std::nullopt;
+	}
+	
 	return read_u64_be(buf, offset + 11);
 }
 
@@ -62,6 +73,11 @@ std::optional<uint64_t> parse_delete(const uint8_t* buf, size_t buf_len, size_t 
 */
 std::optional<ReplaceFields> parse_replace(const uint8_t* buf, size_t buf_len, size_t offset) {
 	if (offset + ORDER_REPLACE_LEN > buf_len)
+	{
+		return std::nullopt;
+	}
+
+	if (buf[offset] != 'U')
 	{
 		return std::nullopt;
 	}
@@ -80,14 +96,12 @@ std::optional<ReplaceFields> parse_replace(const uint8_t* buf, size_t buf_len, s
    message type byte is 'E' before decoding.
 */
 std::optional<OrderExecute> parse_execute(const uint8_t* buf, size_t buf_len, size_t offset) {
-	if (buf_len < offset + 31)
+	if (offset + ORDER_EXECUTE_LEN > buf_len)
 	{
 		return std::nullopt;
 	}
 
-	const uint8_t* p = buf + offset;
-
-	if (p[0] != 'E')
+	if (buf[offset] != 'E')
 	{
 		return std::nullopt;
 	}

@@ -35,11 +35,11 @@ struct Order {
    resting quantity after the replace.
 */
 struct OrderModify {
-    OrderId  oldOrderId_;
-    OrderId  newOrderId_;
-    Side     side_;
-    Price    price_;
-    Quantity quantity_;
+    OrderId  oldOrderId;
+    OrderId  newOrderId;
+    Side     side;
+    Price    price;
+    Quantity quantity;
 };
 
 /* OrderExecute

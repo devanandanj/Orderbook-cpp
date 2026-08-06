@@ -23,7 +23,7 @@ Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
 }
 
 OrderModify MakeOrderModify(OrderId OldOrderId, OrderId NewOrderId, Side side, Price price, Quantity quantity) {
-	return OrderModify{ OldOrderId,NewOrderId, side, price, quantity };
+	return OrderModify{ OldOrderId, NewOrderId, side, price, quantity };
 }
 
 bool IsBuyOrder(const Order& order) {
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
 				std::cerr << "Message " << i << ": malformed 'E' message -- aborting." << std::endl;
 				return 1;
 			}
-			OrderExecute order_exec{ exec->orderId, exec->executedQuantity };
+			OrderExecute order_exec{ exec->orderId, exec->executedQuantity, exec->matchId };
 
 			bool result = ExecuteOrder(&book, order_exec);
 			if (!result)

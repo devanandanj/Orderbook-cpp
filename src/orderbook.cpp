@@ -64,19 +64,19 @@ bool CancelOrder(Orderbook* orderbook, OrderId orderId) {
    adding the new order.
 */
 bool ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
-    bool found = CancelOrder(orderbook, mod.oldOrderId_);
+    bool found = CancelOrder(orderbook, mod.oldOrderId);
     if (!found) {
         return false;
     }
-    return true;
 
     Order new_order;
-    new_order.orderId = mod.newOrderId_;
-    new_order.side = mod.side_;
-    new_order.price = mod.price_;
-    new_order.quantity = mod.quantity_;
+    new_order.orderId = mod.newOrderId;
+    new_order.side = mod.side;
+    new_order.price = mod.price;
+    new_order.quantity = mod.quantity;
 
     AddOrder(orderbook, new_order);
+    return true;
 }
 
 /* ExecuteOrder
