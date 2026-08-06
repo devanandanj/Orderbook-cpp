@@ -20,22 +20,99 @@ static int FindOrderIndex(const Order* orders, uint8_t count, OrderId orderId) {
     return -1;
 }
 
+/* FindWorstIndex
+   Scans one side of the book and returns the index of the least
+   competitive resting order:
+   - Buy side:  lowest price is worst (furthest from matching)
+   - Sell side: highest price is worst (furthest from matching)
+   Ties are broken by orderId ascending, i.e. the order that arrived
+   earlier (lower orderId, treated as a first-come-first-served proxy
+   since Order has no timestamp field) is favored to stay; the later
+   arrival is considered "worse" on a tie and is the one eligible for
+   eviction.
+*/
+
+static int FindWorstIndex(const Order* orders, uint8_t count, Side side) {
+    if (count == 0) return -1;
+
+    int worstIndex{ 0 };
+    for (uint8_t i = 0; i < count; i++)
+    {
+        bool isWorse;
+        if (side == Side::Buy)
+        {
+            isWorse = (orders[i].price < orders[worstIndex].price) ||
+                (orders[i].price == orders[worstIndex].price) &&
+                (orders[i].orderId > orders[worstIndex].orderId);
+        }
+        else
+        {
+            isWorse = (orders[i].price > orders[worstIndex].price) ||
+                (orders[i].price == orders[worstIndex].price) &&
+                (orders[i].orderId > orders[worstIndex].orderId);
+        }
+        if (isWorse) worstIndex = i;
+    }
+    return worstIndex;
+}
+
+/* IsMoreCompetitive
+   Returns true if 'incoming' should displace 'resting' when the book
+   is full. On an exact price tie, the incoming order does NOT win --
+   first-come-first-served means the existing resting order keeps its
+   place.
+*/
+
+static bool IsMoreCompetitive(const Order& incoming, const Order& resting, Side side) {
+    if (side == Side::Buy)
+    {
+        return incoming.price > resting.price;
+    }
+    else
+    {
+        return incoming.price < resting.price;
+    }
+}
+
+
+
 /* AddOrder
    Appends the order to the correct side's array if there is capacity.
    If the array is full the function returns without adding the order.
 */
-bool AddOrder(Orderbook* orderbook, const Order& order) {
+AddResult AddOrder(Orderbook* orderbook, const Order& order) {
+    Order* arr;
+    uint8_t* count;
+
     if (order.side == Side::Buy) {
-        if (orderbook->bid_count >= 32) return false;
-        orderbook->bids[orderbook->bid_count] = order;
-        orderbook->bid_count++;
+        arr = orderbook->bids;
+        count = &orderbook->bid_count;
     }
     else {
-        if (orderbook->ask_count >= 32) return false;
-        orderbook->asks[orderbook->ask_count] = order;
-        orderbook->ask_count++;
+        arr = orderbook->asks;
+        count = &orderbook->ask_count;
     }
-    return true;
+    if (count >= 32)
+    {
+        arr[*count] = order;
+        (*count)++;
+        return AddResult::Inserted;
+    }
+    /* Side is full -- find the worst resting order and decide whether
+        the incoming order is competitive enough to evict it. */
+
+    int worstIndex = FindOrderIndex(arr, count*, order.side);
+    if (worstIndex == -1)
+    {
+        /* Unreachable in practice(count == 32 implies at least one
+            entry), guarded defensively.*/
+        return AddResult::Discarded;
+    }
+    if (IsMoreCompetitive(order, arr[worstIndex], order.side))
+    {
+        arr[worstIndex] = order;
+        return AddResult::Evicted;
+    }
 }
 
 /* CancelOrder
@@ -64,10 +141,10 @@ bool CancelOrder(Orderbook* orderbook, OrderId orderId) {
    Implement a replace by canceling the old order (if present) and
    adding the new order.
 */
-bool ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
+ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
     bool found = CancelOrder(orderbook, mod.oldOrderId);
     if (!found) {
-        return false;
+        return ModifyResult::NotFound;
     }
 
     Order new_order;
@@ -76,7 +153,13 @@ bool ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
     new_order.price = mod.price;
     new_order.quantity = mod.quantity;
 
-    return AddOrder(orderbook, new_order);
+    switch (AddOrder(orderbook, new_order))
+    {
+    case AddResult::Inserted:  return ModifyResult::Replaced;
+    case AddResult::Evicted:  return ModifyResult::Evicted;
+    case AddResult::Discarded: return ModifyResult::Discarded;
+    }
+    return ModifyResult::Discarded; // unreachable, defensive fallback
 }
 
 /* ExecuteOrder

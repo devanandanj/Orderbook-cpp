@@ -15,6 +15,7 @@
 #include "../include/orderbook.h"
 #include "../include/moldudp64.h"
 #include "../include/itchparser.h"
+#include "../include/trace.h"
 
 
 // Small functions used to improve readability of code in main.
@@ -97,6 +98,7 @@ int main(int argc, char** argv) {
 	}
 
 	Orderbook book = {};
+	std::ofstream trace("trace.txt");
 
 	for (size_t i = 0; i < messages.size(); i++)
 	{
@@ -114,11 +116,20 @@ int main(int argc, char** argv) {
 			auto order = parse_add(msg.data, msg.length, 0);
 			if (!order.has_value())
 			{
+				WriteTraceEntry(trace, i, 'A', 0, false, "malformed", book);
 				std::cerr << "Message " << i << ": malformed 'A' message -- aborting." << std::endl;
 				return 1;
 			}
-			bool result = AddOrder(&book, *order);
-			if (!result)
+			AddResult result = AddOrder(&book, *order);
+			
+			const char* reason = nullptr;
+			if (result == AddResult::Evicted) reason = "Evicted worst order";
+			if (result == AddResult::Discarded) reason = "Book full order not competitive";
+			bool accepted = (result != AddResult::Discarded);
+
+			WriteTraceEntry(trace, i, 'A', order->orderId, accepted, reason, book);
+			
+			if (!accepted)
 			{
 				std::cerr << "Message" << i <<
 					": AddOrder failed (book full) for Order ID = "
@@ -131,12 +142,14 @@ int main(int argc, char** argv) {
 			auto orderId = parse_delete(msg.data, msg.length, 0);
 			if (!orderId.has_value())
 			{
+				WriteTraceEntry(trace, i, 'D', 0, false, "Malformed", book);
 				std::cerr << "Message " << i << ": malformed 'D' message -- aborting." << std::endl;
 				return 1;
 			}
 			bool result = CancelOrder(&book, *orderId);
 			if (!result)
 			{
+				WriteTraceEntry(trace, i, 'D', *orderId, result, result ? nullptr : "not_found", book);
 				std::cerr << "Message " << i << ": CancelOrder failed for Order ID = "
 					<< (unsigned long long) * orderId << " -- aborting." << std::endl;
 				return 1;
@@ -146,21 +159,32 @@ int main(int argc, char** argv) {
 		case 'U': {
 			auto fields = parse_replace(msg.data, msg.length, 0);
 			if (!fields.has_value())
-			{
+			{	
+				WriteTraceEntry(trace, i, 'U', 0, false, "malformed", book);
 				std::cerr << "Message " << i << ": malformed 'U' message -- aborting." << std::endl;
 				return 1;
 			}
 			Side side;
 			if (!FindOrderSide(book, fields->OldOrderId, side))
 			{
+				WriteTraceEntry(trace, i, 'U', fields->OldOrderId, false, "old_id_not_found", book);
 				std::cerr << "Message " << i << ": Replace references unknown Old Order ID = "
 					<< (unsigned long long)fields->OldOrderId << " -- aborting." << std::endl;
 				return 1;
 			}
 			OrderModify mod{ fields->OldOrderId, fields->NewOrderId, side, fields->price, fields->quantity };
-			bool result = ModifyOrder(&book, mod);
-			if (!result)
+			ModifyResult result = ModifyOrder(&book, mod);
+			const char* reason = nullptr;
+			if (result == ModifyResult::Evicted) reason = "Evicted worst";
+			if (result == ModifyResult::Discarded) reason = "Book full - Not Competitive";
+			if (result == ModifyResult::NotFound) reason = "Old ID is not found";
+
+			bool accepted = (result == ModifyResult::Replaced || result == ModifyResult::Evicted);
+			WriteTraceEntry(trace, i, 'U', fields->NewOrderId, accepted, reason, book);
+
+			if (!accepted)
 			{
+				WriteTraceEntry(trace, i, 'E', 0, false, "malformed", book);
 				std::cerr << "Message " << i
 					<< ": ModifyOrder failed (book full after cancel) for New Order ID "
 					<< (unsigned long long)fields->NewOrderId << " --aborting" << std::endl;
@@ -172,6 +196,7 @@ int main(int argc, char** argv) {
 			auto exec = parse_execute(msg.data, msg.length, 0);
 			if (!exec.has_value())
 			{
+				WriteTraceEntry(trace, i, 'E', 0, false, "malformed", book);
 				std::cerr << "Message " << i 
 					<< ": malformed 'E' message -- aborting." << std::endl;
 				return 1;
@@ -179,6 +204,7 @@ int main(int argc, char** argv) {
 			OrderExecute order_exec{ exec->orderId, exec->executedQuantity, exec->matchId };
 
 			bool result = ExecuteOrder(&book, order_exec);
+			WriteTraceEntry(trace, i, 'E', exec->orderId, result, result ? nullptr : "not_found", book);
 			if (!result)
 			{
 				std::cerr << "Message " << i << ": ExecuteOrder failed for Order ID = "

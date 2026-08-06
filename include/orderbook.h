@@ -36,7 +36,14 @@ struct Orderbook {
    Inserts a new order into the book. If the corresponding side's array
    is full the function does nothing.
 */
-bool AddOrder(Orderbook* orderbook, const Order& order);
+enum class AddResult : uint8_t
+{
+	Inserted,	// normal insert, side had room
+	Evicted,	// side was full; new order was more competitive, replaced the worst resting order
+	Discarded	// side was full; new order was not competitive enough, book unchanged
+};
+
+AddResult AddOrder(Orderbook* orderbook, const Order& order);
 
 /* CancelOrder
    Removes an order by order id if present. Returns true when an order
@@ -48,7 +55,15 @@ bool CancelOrder(Orderbook* orderbook, OrderId order);
    Apply a replace/modify: remove the old order (if present) and add the
    new one. The caller must populate an OrderModify describing the change.
 */
-bool ModifyOrder(Orderbook* orderbook, const OrderModify& mod);
+enum class ModifyResult : uint8_t
+{
+	Replaced,
+	Evicted,
+	Discarded,
+	NotFound
+};
+
+ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod);
 
 /* ExecuteOrder
    Apply an execution against an order id. If the executed quantity fills
