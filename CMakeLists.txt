@@ -17,6 +17,7 @@ add_executable (Orderbook-cpp
     "src/Orderbook.cpp"
     "src/itchparser.cpp"
     "src/moldudp64.cpp"
+    "src/trace.cpp"
 
 )
 

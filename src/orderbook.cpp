@@ -92,7 +92,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
         arr = orderbook->asks;
         count = &orderbook->ask_count;
     }
-    if (count >= 32)
+    if (*count < 32)
     {
         arr[*count] = order;
         (*count)++;
@@ -101,7 +101,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
     /* Side is full -- find the worst resting order and decide whether
         the incoming order is competitive enough to evict it. */
 
-    int worstIndex = FindOrderIndex(arr, count*, order.side);
+    int worstIndex = FindWorstIndex(arr, *count, order.side);
     if (worstIndex == -1)
     {
         /* Unreachable in practice(count == 32 implies at least one

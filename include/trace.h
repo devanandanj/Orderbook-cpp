@@ -16,7 +16,7 @@
 
 struct SortedOrders{
 	
-	Order order[32];
+	Order orders[32];
 	uint8_t count;
 
 };
