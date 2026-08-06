@@ -113,6 +113,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
         arr[worstIndex] = order;
         return AddResult::Evicted;
     }
+    return AddResult::Discarded;
 }
 
 /* CancelOrder

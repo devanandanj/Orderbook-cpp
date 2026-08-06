@@ -131,10 +131,9 @@ int main(int argc, char** argv) {
 			
 			if (!accepted)
 			{
-				std::cerr << "Message" << i <<
+				std::clog << "Message" << i <<
 					": AddOrder failed (book full) for Order ID = "
-					<< (unsigned long long)order->orderId << "-- aborting" << std::endl;
-				return 1;
+					<< (unsigned long long)order->orderId << std::endl;
 			}
 			break;
 		}
@@ -149,11 +148,12 @@ int main(int argc, char** argv) {
 			bool result = CancelOrder(&book, *orderId);
 			if (!result)
 			{
-				WriteTraceEntry(trace, i, 'D', *orderId, result, result ? nullptr : "not_found", book);
+				WriteTraceEntry(trace, i, 'D', *orderId, result, "not_found", book);
 				std::cerr << "Message " << i << ": CancelOrder failed for Order ID = "
 					<< (unsigned long long) * orderId << " -- aborting." << std::endl;
 				return 1;
 			}
+			WriteTraceEntry(trace, i, 'D', *orderId, result, nullptr, book);
 			break;
 		}
 		case 'U': {
