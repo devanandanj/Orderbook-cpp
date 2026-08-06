@@ -43,6 +43,17 @@ target_include_directories(test_moldudp64 PRIVATE include)
 target_compile_features(test_moldudp64 PRIVATE cxx_std_20)
 enable_strict_warnings(test_moldudp64)
 
+# Scoreboard Self-Checker Test
+add_executable(scoreboard_test
+    test/scoreboard_test.cpp
+    src/Orderbook.cpp
+    src/itchparser.cpp
+    src/moldudp64.cpp
+)
+target_include_directories(scoreboard_test PRIVATE include)
+target_compile_features(scoreboard_test PRIVATE cxx_std_20)
+enable_strict_warnings(scoreboard_test)
+
 # Generator Test
 add_executable(gen_test
     test/gen_test.cpp
