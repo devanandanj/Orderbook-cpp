@@ -47,7 +47,7 @@ static int FindWorstIndex(const Order* orders, uint8_t count, Side side) {
         }
         else
         {
-            isWorse = (orders[i].price < orders[worstIndex].price) ||
+            isWorse = (orders[i].price > orders[worstIndex].price) ||
                 ((orders[i].price == orders[worstIndex].price) &&
                     (orders[i].orderId > orders[worstIndex].orderId));
         }
