@@ -33,11 +33,41 @@
 	 38     Replace id36 -> id200 -> expect REPLACED (room is
 			available, so this is a plain cancel+insert, no eviction
 			needed).
-	 39-41  Add 3 Sell orders -> sanity check that the ask side is
+	 39-41  Add 3 Sell orders (id101 @ 2,000,000, id102 @ 1,990,000,
+			id103 @ 2,010,000) -> sanity check that the ask side is
 			completely unaffected by everything that happened on the
 			bid side (sides are independent 32-slot pools).
 
-   Expected final book state printed by Orderbook-cpp: bids=32 asks=3.
+	 --- Ask-side symmetry tests (mirrors the bid-side coverage above,
+	 exercising FindWorstIndex's ask branch: highest price = worst) ---
+
+	 42-70  Top up asks from 3 to 32 with ids 104..132, strictly
+			DECREASING price (1,980,000 down to 1,952,000). Room for
+			exactly 29 more (3+29=32), so this loop fills the side
+			WITHOUT triggering eviction -- id104 is the loop's worst,
+			id132 its best, but neither is the book's overall worst
+			once id101/102/103 are accounted for.
+			Book's true worst after this loop is id103 @ 2,010,000
+			(highest price of all 32 resting asks).
+	 71     Add id400, price lower than everyone -> expect EVICTED,
+			victim should be id103 (the true worst, not the loop's
+			nominal worst -- id101/103 predate the loop and were never
+			displaced by it).
+	 72     Add id401, price above the new worst (id101 @ 2,000,000,
+			the next-worst once id103 is gone) -> expect DISCARDED.
+	 73     Add id402, price exactly ties the current worst (id101) ->
+			expect DISCARDED (FCFS: id101 keeps its place on a tie).
+	 74     Cancel id101 -> frees one ask slot (32 -> 31).
+	 75     Add id403, deliberately uncompetitive price, room now free
+			-> expect INSERTED (competitiveness check only applies
+			when the side is full).
+	 76     Execute id403, full fill (qty 5 -> 0) -> order removed,
+			ask_count drops 32 -> 31.
+	 77     Add id600 on the BID side -> independence check. Bids are
+			already full and unaffected by anything above; confirms
+			this ask-side sequence never leaked into bid state.
+
+   Expected final book state printed by Orderbook-cpp: bids=32 asks=31.
 */
 
 #include <cstdint>
@@ -209,6 +239,55 @@ int main() {
 	messages.push_back(build_add(102, 'S', 20, 1990000));
 	messages.push_back(build_add(103, 'S', 20, 2010000));
 
+	// ================= ASK-SIDE SYMMETRY TESTS =========================
+	// Exercises FindWorstIndex's ask branch, which was fixed from
+	// "price < worst.price" to "price > worst.price" -- msgs 39-41
+	// alone never filled the ask side, so this is the first test that
+	// actually runs that code path.
+
+	// --- 42-70: top up asks from 3 to 32 --------------------------------
+	// Prices strictly DECREASING as id increases -> id104 is the loop's
+	// worst (highest price), id132 its best (lowest price). Room for
+	// exactly 29 more (3+29=32) -- this loop fills the side WITHOUT
+	// triggering eviction. Note: id103 (added earlier, @2,010,000) is
+	// still the book's true worst after this loop, not anything from
+	// the loop itself -- id101/102/103 predate it and are untouched.
+	for (uint64_t id = 104; id <= 132; id++) {
+		uint32_t price = 1980000 - uint32_t(id - 104) * 1000;
+		messages.push_back(build_add(id, 'S', 10, price));
+	}
+
+	// --- 71: Add id400, price lower than everyone -> expect EVICTED ----
+	// Victim should be id103 (the true worst / highest price on the ask
+	// side -- predates the loop above, never displaced by it).
+	messages.push_back(build_add(400, 'S', 10, 1900000));
+
+	// --- 72: Add id401, price above the new worst (id101 @ 2,000,000) --
+	// Expect DISCARDED (less competitive than current worst ask).
+	messages.push_back(build_add(401, 'S', 10, 2050000));
+
+	// --- 73: Add id402, price exactly ties the current worst (id101) ---
+	// Expect DISCARDED (FCFS: id101 keeps its place on a tie).
+	messages.push_back(build_add(402, 'S', 10, 2000000));
+
+	// --- 74: Cancel id101 -> frees one ask slot (32 -> 31) --------------
+	messages.push_back(build_delete(101));
+
+	// --- 75: Add id403, deliberately uncompetitive price, room free ----
+	// Expect INSERTED (competitiveness check only applies when full).
+	messages.push_back(build_add(403, 'S', 5, 2100000));
+
+	// --- 76: Execute id403, full fill (qty 5 -> 0) ----------------------
+	// Confirmed via ExecuteOrder's swap-and-pop: slot frees, ask_count
+	// drops 32 -> 31.
+	messages.push_back(build_execute(403, 5, /*matchId=*/9002));
+
+	// --- 77: Add id600 on the BID side -> independence check -----------
+	// Bids are already full at 32 (unaffected by anything above), so
+	// this should trigger a BID-side eviction only. Confirms the ask
+	// count from msg 76 doesn't get disturbed by unrelated bid activity.
+	messages.push_back(build_add(600, 'B', 10, 1060000));
+
 	Bytes file = build_mold_file(messages);
 
 	constexpr const char* outPath = "stress_test.mold";
@@ -222,7 +301,7 @@ int main() {
 
 	std::cout << "Wrote " << messages.size() << " messages ("
 		<< file.size() << " bytes) to " << outPath << std::endl;
-	std::cout << "Expected final book state: bids=32 asks=3" << std::endl;
+	std::cout << "Expected final book state: bids=32 asks=31" << std::endl;
 
 	return 0;
 }
