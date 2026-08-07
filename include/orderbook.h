@@ -34,7 +34,9 @@ struct Orderbook {
 
 /* AddOrder
    Inserts a new order into the book. If the corresponding side's array
-   is full the function does nothing.
+   is full, evicts the worst resting order if the incoming order is more
+   competitive; otherwise returns Discarded and leaves the book unchanged.
+   Callers must check the returned AddResult — this does not fail silently.
 */
 enum class AddResult : uint8_t
 {

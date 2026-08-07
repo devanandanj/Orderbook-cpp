@@ -42,14 +42,14 @@ static int FindWorstIndex(const Order* orders, uint8_t count, Side side) {
         if (side == Side::Buy)
         {
             isWorse = (orders[i].price < orders[worstIndex].price) ||
-                (orders[i].price == orders[worstIndex].price) &&
-                (orders[i].orderId > orders[worstIndex].orderId);
+                ((orders[i].price == orders[worstIndex].price) &&
+                    (orders[i].orderId > orders[worstIndex].orderId));
         }
         else
         {
-            isWorse = (orders[i].price > orders[worstIndex].price) ||
-                (orders[i].price == orders[worstIndex].price) &&
-                (orders[i].orderId > orders[worstIndex].orderId);
+            isWorse = (orders[i].price < orders[worstIndex].price) ||
+                ((orders[i].price == orders[worstIndex].price) &&
+                    (orders[i].orderId > orders[worstIndex].orderId));
         }
         if (isWorse) worstIndex = i;
     }
