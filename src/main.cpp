@@ -2,7 +2,7 @@
 /*
    main.cpp
    ----------------
-   Reads a MoldUDP64-framed file, deframes the
+   Reads a MoldUDP64-framed file, de frames the
    envelope into inner messages, parses each message and applies it
    against an in-memory Orderbook.
 
@@ -10,6 +10,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 #include "../include/using.h"
 #include "../include/orderbook.h"
@@ -39,6 +40,7 @@ bool IsBuyOrder(const Order& order) {
 static std::vector<uint8_t> read_file_bytes(const char* path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file) {
+		std::cerr << "Failed to open: " << std::filesystem::absolute(path) << "\n";
 		return {};
 	}
 	std::streamsize size = file.tellg();
@@ -98,7 +100,7 @@ int main(int argc, char** argv) {
 	}
 
 	Orderbook book = {};
-	std::ofstream trace("trace.txt");
+	std::ofstream trace(std::string(PROJECT_ROOT) + "/trace.txt");
 
 	for (size_t i = 0; i < messages.size(); i++)
 	{

@@ -1,8 +1,8 @@
 ﻿cmake_minimum_required (VERSION 3.10)
 
 if (POLICY CMP0141)
-  cmake_policy(SET CMP0141 NEW)
-  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
+    cmake_policy(SET CMP0141 NEW)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
 project ("Orderbook-cpp")
@@ -17,16 +17,17 @@ endfunction()
 
 # Add source to this project's executable.
 add_executable (Orderbook-cpp
-    "src/main.cpp"
-    "src/Orderbook.cpp"
-    "src/itchparser.cpp"
-    "src/moldudp64.cpp"
-    "src/trace.cpp"
+        "src/main.cpp"
+        "src/Orderbook.cpp"
+        "src/itchparser.cpp"
+        "src/moldudp64.cpp"
+        "src/trace.cpp"
 )
 enable_strict_warnings(Orderbook-cpp)
 
 # test orderbook
 add_executable(test_orderbook test/test_orderbook.cpp src/orderbook.cpp)
+target_link_options(Orderbook-cpp PRIVATE -static)
 enable_strict_warnings(test_orderbook)
 
 add_executable(test_itchparser test/test_itchparser.cpp src/itchparser.cpp)
@@ -58,6 +59,7 @@ enable_strict_warnings(test_moldudp64)
 add_executable(gen_test
     test/gen_test.cpp
 )
+target_link_options(gen_test PRIVATE -static)
 target_include_directories(gen_test PRIVATE include)
 target_compile_features(gen_test PRIVATE cxx_std_20)
 enable_strict_warnings(gen_test)
@@ -67,3 +69,7 @@ target_include_directories(Orderbook-cpp PRIVATE include)
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET Orderbook-cpp PROPERTY CXX_STANDARD 20)
 endif()
+
+target_compile_definitions(Orderbook-cpp PRIVATE
+        PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
