@@ -27,11 +27,11 @@ Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
 OrderModify MakeOrderModify(OrderId OldOrderId, OrderId NewOrderId, Side side, Price price, Quantity quantity) {
 	return OrderModify{ OldOrderId, NewOrderId, side, price, quantity };
 }
-
+/*
 bool IsBuyOrder(const Order& order) {
 	return order.side == Side::Buy;
 }
-
+*/
 /* read_file_bytes
    Read the entire file into a vector<uint8_t>. Returns an empty vector on
    failure. This helper is synchronous and loads the whole file into memory
@@ -51,9 +51,7 @@ static std::vector<uint8_t> read_file_bytes(const char* path) {
 	{
 		return {};
 	}
-
 	return buffer;
-
 }
 
 /* FindOrderSide
