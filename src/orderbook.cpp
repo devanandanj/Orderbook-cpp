@@ -32,7 +32,7 @@ static int FindOrderIndex(const Order* orders, uint8_t count, OrderId orderId) {
    eviction.
 */
 
-static int FindWorstIndex(const Order* orders, uint8_t count, Side side) {
+static int FindWorstIndex(const Order* orders, const uint8_t count, const Side side) {
     if (count == 0) return -1;
 
     int worstIndex{ 0 };
@@ -63,7 +63,7 @@ static int FindWorstIndex(const Order* orders, uint8_t count, Side side) {
    place.
 */
 
-static bool IsMoreCompetitive(const Order& incoming, const Order& resting, Side side) {
+static bool IsMoreCompetitive(const Order& incoming, const Order& resting, const Side side) {
     if (side == Side::Buy)
     {
         return incoming.price > resting.price;
@@ -101,7 +101,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
     /* Side is full -- find the worst resting order and decide whether
         the incoming order is competitive enough to evict it. */
 
-    int worstIndex = FindWorstIndex(arr, *count, order.side);
+    const int worstIndex = FindWorstIndex(arr, *count, order.side);
     if (worstIndex == -1)
     {
         /* Unreachable in practice(count == 32 implies at least one
@@ -148,7 +148,7 @@ ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
         return ModifyResult::NotFound;
     }
 
-    Order new_order;
+    Order new_order{};
     new_order.orderId = mod.newOrderId;
     new_order.side = mod.side;
     new_order.price = mod.price;

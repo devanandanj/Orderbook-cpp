@@ -1,6 +1,6 @@
 #include "../include/trace.h"
 
-SortedOrders SortSide(const Order* src, uint8_t count) {
+SortedOrders SortSide(const Order* src, const uint8_t count) {
     SortedOrders result{};
     result.count = count;
 
@@ -12,7 +12,7 @@ SortedOrders SortSide(const Order* src, uint8_t count) {
     // Insertion sort ascending by orderId.
     for (uint8_t i = 1; i < count; i++)
     {
-        Order key = result.orders[i];
+        const Order key = result.orders[i];
         int j = i - 1;
         while (j >= 0 && result.orders[j].orderId > key.orderId)
         {
@@ -24,8 +24,8 @@ SortedOrders SortSide(const Order* src, uint8_t count) {
     return result;
 }
 
-void WriteTraceEntry(std::ostream& out, size_t msgIndex, char msgType, OrderId orderId,
-    bool accepted, const char* reason, const Orderbook& book)
+void WriteTraceEntry(std::ostream& out, const size_t msgIndex, const char msgType, const OrderId orderId,
+    const bool accepted, const char* reason, const Orderbook& book)
 {
     out << "MSG," << msgIndex << ',' << msgType << ',' << orderId << ','
         << (accepted ? "OK" : "REJECTED") << ','

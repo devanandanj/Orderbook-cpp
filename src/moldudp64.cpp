@@ -8,7 +8,7 @@
 
 #include "../include/moldudp64.h"
 
-std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len) {
+std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, const size_t buf_len) {
 	std::vector<MoldUDPMessage> messages;
 
 	if (buf_len < MOLDUDP64_HEADER_LEN)
@@ -16,7 +16,7 @@ std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len
 		return messages;
 	}
 
-	uint16_t message_count = read_u16_be(buf, MOLDUDP64_MSGCOUNT_OFFSET);
+	const uint16_t message_count = read_u16_be(buf, MOLDUDP64_MSGCOUNT_OFFSET);
 
 	if (message_count == MOLDUDP64_HEARTBEAT || message_count == MOLDUDP64_END_OF_SESSION)
 	{
@@ -32,7 +32,7 @@ std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len
 			return {};
 		}
 
-		uint16_t msg_len = read_u16_be(buf, cursor);
+		const uint16_t msg_len = read_u16_be(buf, cursor);
 		cursor += 2;
 
 		if (cursor + msg_len > buf_len)

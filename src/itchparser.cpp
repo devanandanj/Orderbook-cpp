@@ -8,16 +8,16 @@
 
 #include "../include/itchparser.h"
 
-uint16_t read_u16_be(const uint8_t* buf, size_t offset) {
-	return (uint16_t(buf[offset]) << 8) | buf[offset + 1];
+uint16_t read_u16_be(const uint8_t* buf, const size_t offset) {
+	return (static_cast<uint16_t>(buf[offset]) << 8) | buf[offset + 1];
 }
 
-uint32_t read_u32_be(const uint8_t* buf, size_t offset) {
-	return (uint32_t(read_u16_be(buf, offset)) << 16) | read_u16_be(buf, offset + 2);
+uint32_t read_u32_be(const uint8_t* buf, const size_t offset) {
+	return (static_cast<uint32_t>(read_u16_be(buf, offset)) << 16) | read_u16_be(buf, offset + 2);
 }
 
-uint64_t read_u64_be(const uint8_t* buf, size_t offset) {
-	return (uint64_t(read_u32_be(buf, offset)) << 32) | read_u32_be(buf, offset + 4);
+uint64_t read_u64_be(const uint8_t* buf, const size_t offset) {
+	return (static_cast<uint64_t>(read_u32_be(buf, offset)) << 32) | read_u32_be(buf, offset + 4);
 }
 
 /* parse_add
@@ -25,7 +25,7 @@ uint64_t read_u64_be(const uint8_t* buf, size_t offset) {
    The function validates that a full ADD_ORDER_LEN bytes are available
    before decoding fields using the read_u*_be helpers.
 */
-std::optional<Order> parse_add(const uint8_t* buf, size_t buf_len, size_t offset) {
+std::optional<Order> parse_add(const uint8_t* buf, const size_t buf_len, const size_t offset) {
 	if (offset + ADD_ORDER_LEN > buf_len)
 	{
 		return std::nullopt;
@@ -40,7 +40,7 @@ std::optional<Order> parse_add(const uint8_t* buf, size_t buf_len, size_t offset
 	   in main.cpp is responsible for routing based on this byte
 	   before calling parse_add. */
 
-	Order order;
+	Order order{};
 	order.orderId = read_u64_be(buf, offset + 11);
 	order.side = (buf[offset + 19] == 'B') ? Side::Buy : Side::Sell;
 	order.price = read_u32_be(buf, offset + 32);
@@ -50,7 +50,7 @@ std::optional<Order> parse_add(const uint8_t* buf, size_t buf_len, size_t offset
 
 /* parse_delete
    Decode a 'D' (Order Delete) message. Returns the 64-bit order id to
-   delete when successful, or std::nullopt when the buffer is incomplete.
+   delete when successful, or std::null-opt when the buffer is incomplete.
 */
 std::optional<uint64_t> parse_delete(const uint8_t* buf, size_t buf_len, size_t offset) {
 	if (offset + ORDER_DELETE_LEN > buf_len)
@@ -82,7 +82,7 @@ std::optional<ReplaceFields> parse_replace(const uint8_t* buf, size_t buf_len, s
 		return std::nullopt;
 	}
 
-	ReplaceFields fields;
+	ReplaceFields fields{};
 	fields.OldOrderId = read_u64_be(buf, offset + 11);
 	fields.NewOrderId = read_u64_be(buf, offset + 19);
 	fields.price      = read_u32_be(buf, offset + 31);
@@ -105,7 +105,7 @@ std::optional<OrderExecute> parse_execute(const uint8_t* buf, size_t buf_len, si
 	{
 		return std::nullopt;
 	}
-	OrderExecute exec;
+	OrderExecute exec{};
 	exec.orderId = read_u64_be(buf, offset + 11);
 	exec.executedQuantity = read_u32_be(buf, offset + 19);
 	exec.matchId = read_u64_be(buf, offset + 23);

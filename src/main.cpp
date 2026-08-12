@@ -18,16 +18,14 @@
 #include "../include/itchparser.h"
 #include "../include/trace.h"
 
-
+/*
 // Small functions used to improve readability of code in main.
-Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
+static Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
 	return Order{ orderId, side, price, quantity };
 }
-
-OrderModify MakeOrderModify(OrderId OldOrderId, OrderId NewOrderId, Side side, Price price, Quantity quantity) {
+static OrderModify MakeOrderModify(OrderId OldOrderId, OrderId NewOrderId, Side side, Price price, Quantity quantity) {
 	return OrderModify{ OldOrderId, NewOrderId, side, price, quantity };
 }
-/*
 bool IsBuyOrder(const Order& order) {
 	return order.side == Side::Buy;
 }
@@ -43,7 +41,7 @@ static std::vector<uint8_t> read_file_bytes(const char* path) {
 		std::cerr << "Failed to open: " << std::filesystem::absolute(path) << "\n";
 		return {};
 	}
-	std::streamsize size = file.tellg();
+	const std::streamsize size = file.tellg();
 	file.seekg(0, std::ios::beg);
 
 	std::vector<uint8_t> buffer(static_cast<size_t>(size));
@@ -58,7 +56,7 @@ static std::vector<uint8_t> read_file_bytes(const char* path) {
    Look up the side (Buy/Sell) for an existing order id by searching
    both the bids and asks arrays. Returns true and sets 'side' when found.
 */
-static bool FindOrderSide(const Orderbook& book, OrderId orderId, Side& side) {
+static bool FindOrderSide(const Orderbook& book, const OrderId orderId, Side& side) {
 	for (uint8_t i = 0; i < book.bid_count; i++)
 	{
 		if (book.bids[i].orderId == orderId)
@@ -109,9 +107,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
-		uint8_t msg_type = msg.data[0];
-
-		switch (msg_type) {
+		switch (uint8_t msg_type = msg.data[0]) {
 		case 'A': {
 			auto order = parse_add(msg.data, msg.length, 0);
 			if (!order.has_value())
