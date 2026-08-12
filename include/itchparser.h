@@ -24,7 +24,6 @@ Design notes for beginners:
 
 #include <cstdint>
 #include <optional>
-#include <cstddef>
 
 #include "types.h"
 

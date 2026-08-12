@@ -25,8 +25,8 @@
    silently when capacity is exhausted.
 */
 struct Orderbook {
-	Order bids[32];
-	Order asks[32];
+	Order bids[32]{};
+	Order asks[32]{};
 	Bids bid_count{};
 	Asks ask_count{};
 
