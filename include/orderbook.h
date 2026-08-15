@@ -29,8 +29,10 @@ struct Orderbook {
 	Order asks[32]{};
 	Bids bid_count{};
 	Asks ask_count{};
-
 };
+// rejection counter
+inline uint64_t bid_reject_book_full{};
+inline uint64_t ask_reject_book_full{};
 
 /* AddOrder
    Inserts a new order into the book. If the corresponding side's array
@@ -73,3 +75,25 @@ ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod);
    Returns true if the order was found and updated, false if not found.
 */
 bool ExecuteOrder(Orderbook* orderbook, const OrderExecute& exec);
+
+/* FullBookSnapshot
+   Serializes full depth of both sides (price, quantity, orderId per resting
+   order) into a caller-provided buffer for EOD diff against the FPGA.
+   Order within each side is NOT guaranteed to be price-sorted in the
+   underlying array — this function sorts before writing so the trace
+   format is deterministic and comparable byte-for-byte.
+*/
+struct BookLevel {
+    Price price;
+    Quantity quantity;
+    OrderId orderId;
+};
+
+struct BookSnapshot{
+    BookLevel bids[32]{};
+    BookLevel asks[32]{};
+    Bids bid_count{};
+    Asks ask_count{};
+};
+
+void FullBookSnapshot(const Orderbook* orderbook, BookSnapshot* snapshot);

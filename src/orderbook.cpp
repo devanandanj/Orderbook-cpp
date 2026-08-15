@@ -7,18 +7,27 @@
 
 #include "../include/orderbook.h"
 #include "../include/types.h"
+#include <algorithm>
 
 /* FindOrderIndex
    Helper that searches the provided orders array for orderId and
    returns the index or -1 when not found.
 */
-static int FindOrderIndex(const Order* orders, uint8_t count, OrderId orderId) {
+static int FindOrderIndex(const Order* orders, const uint8_t count, const OrderId orderId) {
     for (uint8_t i = 0; i < count; i++) {
         if (orders[i].orderId == orderId)
             return i;
     }
     return -1;
 }
+
+static void RemoveAt(Order* arr, uint8_t* count, int idx) {
+    arr[idx] = arr[(*count) - 1];
+    --(*count);
+}
+
+
+
 
 /* FindWorstIndex
    Scans one side of the book and returns the index of the least
@@ -122,19 +131,15 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
 */
 bool CancelOrder(Orderbook* orderbook, OrderId orderId) {
     int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, orderId);
-    if (idx != -1) {
-        orderbook->bids[idx] = orderbook->bids[orderbook->bid_count - 1];
-        orderbook->bid_count--;
+    if (idx >= 0) {
+        RemoveAt(orderbook->bids, &orderbook->bid_count, idx);
         return true;
     }
-
     idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, orderId);
-    if (idx != -1) {
-        orderbook->asks[idx] = orderbook->asks[orderbook->ask_count - 1];
-        orderbook->ask_count--;
+    if (idx >= 0) {
+        RemoveAt(orderbook->asks, &orderbook->ask_count, idx);
         return true;
     }
-
     return false;
 }
 
@@ -143,24 +148,15 @@ bool CancelOrder(Orderbook* orderbook, OrderId orderId) {
    adding the new order.
 */
 ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
-    bool found = CancelOrder(orderbook, mod.oldOrderId);
-    if (!found) {
+    if (!CancelOrder(orderbook, mod.oldOrderId))
         return ModifyResult::NotFound;
-    }
 
-    Order new_order{};
-    new_order.orderId = mod.newOrderId;
-    new_order.side = mod.side;
-    new_order.price = mod.price;
-    new_order.quantity = mod.quantity;
-
-    switch (AddOrder(orderbook, new_order))
-    {
-    case AddResult::Inserted:  return ModifyResult::Replaced;
-    case AddResult::Evicted:  return ModifyResult::Evicted;
-    case AddResult::Discarded: return ModifyResult::Discarded;
+    const Order newOrder{.orderId = mod.newOrderId, .side = mod.side, .price = mod.price, .quantity = mod.quantity};
+    switch (AddOrder(orderbook, newOrder)) {
+        case AddResult::Inserted: return ModifyResult::Replaced;
+        case AddResult::Evicted:  return ModifyResult::Evicted;
+        default:                  return ModifyResult::Discarded;
     }
-    return ModifyResult::Discarded; // unreachable, defensive fallback
 }
 
 /* ExecuteOrder
@@ -169,34 +165,38 @@ ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
    otherwise the quantity is reduced.
 */
 bool ExecuteOrder(Orderbook* orderbook, const OrderExecute& exec) {
-    // bids
     int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, exec.orderId);
-    if (idx != -1)
-    {
-        if (exec.executedQuantity >= orderbook->bids[idx].quantity)
-        {
-            // fully filled - removed from orderbook
-            orderbook->bids[idx] = orderbook->bids[orderbook->bid_count - 1];
-            orderbook->bid_count--;
-        }
+    if (idx >= 0) {
+        if (Order& o = orderbook->bids[idx]; exec.executedQuantity >= o.quantity)
+            RemoveAt(orderbook->bids, &orderbook->bid_count, idx);
         else
-        {
-            orderbook->bids[idx].quantity -= exec.executedQuantity;
-        }
+            o.quantity -= exec.executedQuantity;
         return true;
     }
-    // asks
     idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, exec.orderId);
-    if (idx != -1) {
-        if (exec.executedQuantity >= orderbook->asks[idx].quantity) {
-            orderbook->asks[idx] = orderbook->asks[orderbook->ask_count - 1];
-            orderbook->ask_count--;
-        }
-        else {
-            orderbook->asks[idx].quantity -= exec.executedQuantity;
-        }
+    if (idx >= 0) {
+        if (Order& o = orderbook->asks[idx]; exec.executedQuantity >= o.quantity)
+            RemoveAt(orderbook->asks, &orderbook->ask_count, idx);
+        else
+            o.quantity -= exec.executedQuantity;
         return true;
     }
+    return false;
+}
 
-    return false;   // order not found
+void FullBookSnapshot(const Orderbook *orderbook, BookSnapshot *snapshot) {
+    snapshot->bid_count = orderbook->bid_count;
+    snapshot->ask_count = orderbook->ask_count;
+    for (int i = 0; i < orderbook->bid_count; ++i)
+        snapshot->bids[i] = {orderbook->bids[i].price, orderbook->bids[i].quantity, orderbook->bids[i].orderId};
+    for (int i = 0; i < orderbook->ask_count; ++i)
+        snapshot->asks[i] = {orderbook->asks[i].price, orderbook->asks[i].quantity, orderbook->asks[i].orderId};
+    std::sort(snapshot->bids, snapshot->bids + snapshot->bid_count,
+        [](const BookLevel& a, const BookLevel& b) {
+            return a.price != b.price ? a.price > b.price : a.orderId < b.orderId;
+        });
+    std::sort(snapshot->asks, snapshot->asks + snapshot->ask_count,
+        [](const BookLevel& a, const BookLevel& b) {
+            return a.price != b.price ? a.price < b.price : a.orderId < b.orderId;
+        });
 }
