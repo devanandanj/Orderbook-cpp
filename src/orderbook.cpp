@@ -92,14 +92,17 @@ static bool IsMoreCompetitive(const Order& incoming, const Order& resting, const
 AddResult AddOrder(Orderbook* orderbook, const Order& order) {
     Order* arr;
     uint8_t* count;
+    uint64_t* rejectCounter;
 
     if (order.side == Side::Buy) {
         arr = orderbook->bids;
         count = &orderbook->bid_count;
+        rejectCounter = &orderbook->bid_reject_book_full;
     }
     else {
         arr = orderbook->asks;
         count = &orderbook->ask_count;
+        rejectCounter = &orderbook->ask_reject_book_full;
     }
     if (*count < MAX_ORDERS_PER_SIDE)
     {
@@ -107,14 +110,11 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
         (*count)++;
         return AddResult::Inserted;
     }
-    /* Side is full -- find the worst resting order and decide whether
-        the incoming order is competitive enough to evict it. */
 
     const int worstIndex = FindWorstIndex(arr, *count, order.side);
     if (worstIndex == -1)
     {
-        /* Unreachable in practice(count == 32 implies at least one
-            entry), guarded defensively.*/
+        ++(*rejectCounter);
         return AddResult::Discarded;
     }
     if (IsMoreCompetitive(order, arr[worstIndex], order.side))
@@ -122,6 +122,7 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
         arr[worstIndex] = order;
         return AddResult::Evicted;
     }
+    ++(*rejectCounter);
     return AddResult::Discarded;
 }
 

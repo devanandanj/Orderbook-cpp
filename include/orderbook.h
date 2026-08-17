@@ -29,10 +29,9 @@ struct Orderbook {
 	Order asks[32]{};
 	Bids bid_count{};
 	Asks ask_count{};
+    uint64_t bid_reject_book_full{};
+    uint64_t ask_reject_book_full{};
 };
-// rejection counter
-inline uint64_t bid_reject_book_full{};
-inline uint64_t ask_reject_book_full{};
 
 /* AddOrder
    Inserts a new order into the book. If the corresponding side's array

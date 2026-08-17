@@ -100,16 +100,16 @@ int main(int argc, char** argv) {
 
 	for (size_t i = 0; i < messages.size(); i++)
 	{
-		const MoldUDPMessage& msg = messages[i];
-		if (msg.length == 0)
+		const auto&[data, length] = messages[i];
+		if (length == 0)
 		{
 			std::cerr << "Message " << i << ": zero length -- nothing to dispatch" << std::endl;
 			return 1;
 		}
 
-		switch (uint8_t msg_type = msg.data[0]) {
+		switch (uint8_t msg_type = data[0]) {
 		case 'A': {
-			auto order = parse_add(msg.data, msg.length, 0);
+			auto order = parse_add(data, length, 0);
 			if (!order.has_value())
 			{
 				WriteTraceEntry(trace, i, 'A', 0, false, "malformed", book);
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'D': {
-			auto orderId = parse_delete(msg.data, msg.length, 0);
+			auto orderId = parse_delete(data, length, 0);
 			if (!orderId.has_value())
 			{
 				WriteTraceEntry(trace, i, 'D', 0, false, "Malformed", book);
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'U': {
-			auto fields = parse_replace(msg.data, msg.length, 0);
+			auto fields = parse_replace(data, length, 0);
 			if (!fields.has_value())
 			{	
 				WriteTraceEntry(trace, i, 'U', 0, false, "malformed", book);
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'E': {
-			auto exec = parse_execute(msg.data, msg.length, 0);
+			auto exec = parse_execute(data, length, 0);
 			if (!exec.has_value())
 			{
 				WriteTraceEntry(trace, i, 'E', 0, false, "malformed", book);

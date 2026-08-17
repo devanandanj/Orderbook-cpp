@@ -67,7 +67,47 @@
 			already full and unaffected by anything above; confirms
 			this ask-side sequence never leaked into bid state.
 
-   Expected final book state printed by Orderbook-cpp: bids=32 asks=31.
+	 78-109 Complete BID-SIDE WIPEOUT. Cancel every one of the 32
+			currently-resting bids: ids 4-32 (29 ids, carried over from
+			the original fill/evict sequence), plus id33, id200, id600
+			(the survivors of the evict/replace steps above).A burst of
+			cancels can empty a side entirely, and with only eviction
+			(no capacity margin) there's no built-in guarantee of retaining
+			ANY price information once it happens. bid_count must reach
+			precisely 0 after this block, with no crash or corrupted
+			state on the way down.
+	 110    Add id700 (Buy, price 1,000,000) into the now-empty bid
+			book -> expect INSERTED. Room is unconditional at count=0;
+			this proves the side recovers cleanly and isn't left
+			latched in some stale "full" state after wipeout.
+	 111-141 Complete ASK-SIDE WIPEOUT via the OTHER removal path --
+			fills, not cancels (id102 qty 20, ids104-132 qty 10 each,
+			id400 qty 10 -- all exact resting quantities, so each
+			Execute is a full fill that removes the order). ask_count
+			must reach precisely 0.
+	 142    Add id800 (Sell, price 2,000,000) into the now-empty ask
+			book -> expect INSERTED, confirming recovery on the ask
+			side as well.
+
+   Expected final book state printed by Orderbook-cpp: bids=32 asks=31
+   at the point immediately after msg77 -- the wipeout below then
+   drives both sides to bids=0 asks=31, then bids=0 asks=0, before the
+   two recovery adds bring it back to bids=1 asks=1.
+
+   Expected rejection counters (msgs that hit AddResult::Discarded on a
+   full side -- traced by hand against the sequence above):
+     bid_reject_book_full = 2
+       - msg33: id34 @900000, worse than worst-at-the-time (id2 @1001000)
+       - msg34: id35 @1001000, exact tie with worst (id2) -- FCFS keeps id2
+       (msg77/id600 also hits a full bid side, but is MORE competitive
+        than the worst resting order at that point (id3 @1002000), so
+        it evicts rather than rejects -- not counted here.)
+     ask_reject_book_full = 2
+       - msg72: id401 @2050000, worse than worst-at-the-time (id101 @2000000)
+       - msg73: id402 @2000000, exact tie with worst (id101) -- FCFS keeps id101
+       (msg75/id403 lands when the ask side has room -- freed by the
+        msg74 cancel of id101 -- so it's a room-available Inserted,
+        not a reject.)
 */
 
 #include <cstdint>
@@ -209,11 +249,13 @@ int main() {
 	messages.push_back(build_add(33, 'B', 10, 1050000));
 
 	// --- 33: Add id34, price below the new worst (id2 @ 1001000) ------
-	// Expect DISCARDED (not competitive).
+	// Expect DISCARDED (not competitive). Contributes 1 to
+	// bid_reject_book_full.
 	messages.push_back(build_add(34, 'B', 10, 900000));
 
 	// --- 34: Add id35, price exactly ties the current worst (id2) -----
 	// Expect DISCARDED (FCFS: id2, already resting, keeps its place).
+	// Contributes 1 to bid_reject_book_full.
 	messages.push_back(build_add(35, 'B', 10, 1001000));
 
 	// --- 35: Cancel id2 -> frees one bid slot (32 -> 31) ---------------
@@ -264,17 +306,19 @@ int main() {
 
 	// --- 72: Add id401, price above the new worst (id101 @ 2,000,000) --
 	// Expect DISCARDED (less competitive than current worst ask).
+	// Contributes 1 to ask_reject_book_full.
 	messages.push_back(build_add(401, 'S', 10, 2050000));
 
 	// --- 73: Add id402, price exactly ties the current worst (id101) ---
 	// Expect DISCARDED (FCFS: id101 keeps its place on a tie).
+	// Contributes 1 to ask_reject_book_full.
 	messages.push_back(build_add(402, 'S', 10, 2000000));
 
 	// --- 74: Cancel id101 -> frees one ask slot (32 -> 31) --------------
 	messages.push_back(build_delete(101));
 
-	// --- 75: Add id403, deliberately uncompetitive price, room free ----
-	// Expect INSERTED (competitiveness check only applies when full).
+	// --- 75: Add id403, deliberately uncompetitive price, room now free
+	// -> expect INSERTED (competitiveness check only applies when full).
 	messages.push_back(build_add(403, 'S', 5, 2100000));
 
 	// --- 76: Execute id403, full fill (qty 5 -> 0) ----------------------
@@ -284,9 +328,43 @@ int main() {
 
 	// --- 77: Add id600 on the BID side -> independence check -----------
 	// Bids are already full at 32 (unaffected by anything above), so
-	// this should trigger a BID-side eviction only. Confirms the ask
+	// this should trigger a BID-side eviction only (evicts the worst
+	// resting bid, id3 @1002000 -- not a reject). Confirms the ask
 	// count from msg 76 doesn't get disturbed by unrelated bid activity.
 	messages.push_back(build_add(600, 'B', 10, 1060000));
+
+	// ================= COMPLETE BID-SIDE WIPEOUT =======================
+	// Currently-resting bid ids after msg77 (32 total, hand-traced
+	// against the fill/evict/discard/cancel sequence above):
+	//   4..32 (29 ids, never displaced), 33, 200, 600.
+	// Cancel all of them in a row -> bid_count 32 -> 0.
+	for (uint64_t id = 4; id <= 32; id++) {
+		messages.push_back(build_delete(id));
+	}
+	messages.push_back(build_delete(33));
+	messages.push_back(build_delete(200));
+	messages.push_back(build_delete(600));
+
+	// --- 110: recovery add on the now-empty bid side --------------------
+	// Expect INSERTED (count=0 < capacity, no competitiveness check
+	// applies). Confirms the engine isn't left in a bad state after
+	// hitting zero resting orders.
+	messages.push_back(build_add(700, 'B', 10, 1000000));
+
+	// ================= COMPLETE ASK-SIDE WIPEOUT (via fills) ===========
+	// Currently-resting ask ids after msg76 (31 total, unaffected by
+	// the bid-side wipeout above): 102 (qty 20), 104..132 (qty 10
+	// each), 400 (qty 10). Execute each at its full resting quantity
+	// -> full fill -> removed. ask_count 31 -> 0.
+	messages.push_back(build_execute(102, 20, /*matchId=*/9101));
+	for (uint64_t id = 104; id <= 132; id++) {
+		messages.push_back(build_execute(id, 10, /*matchId=*/9200 + id));
+	}
+	messages.push_back(build_execute(400, 10, /*matchId=*/9102));
+
+	// --- 142: recovery add on the now-empty ask side ---------------------
+	// Expect INSERTED, same reasoning as msg110.
+	messages.push_back(build_add(800, 'S', 10, 2000000));
 
 	Bytes file = build_mold_file(messages);
 
@@ -301,7 +379,13 @@ int main() {
 
 	std::cout << "Wrote " << messages.size() << " messages ("
 		<< file.size() << " bytes) to " << outPath << std::endl;
-	std::cout << "Expected final book state: bids=32 asks=31" << std::endl;
+	std::cout << "Expected book state after msg77: bids=32 asks=31" << std::endl;
+	std::cout << "Expected mid-stream: bids=0 after bid-side wipeout (msg109)" << std::endl;
+	std::cout << "Expected mid-stream: asks=0 after ask-side wipeout (msg141)" << std::endl;
+	std::cout << "Expected final book state: bids=1 asks=1" << std::endl;
+	std::cout << "Expected bid_reject_book_full = 2 (msg33, msg34)" << std::endl;
+	std::cout << "Expected ask_reject_book_full = 2 (msg72, msg73)" << std::endl;
+	std::cout << "(wipeout cancels/fills do not add to either reject counter)" << std::endl;
 
 	return 0;
 }
