@@ -17,6 +17,7 @@
 #include "../include/moldudp64.h"
 #include "../include/itchparser.h"
 #include "../include/trace.h"
+#include "../include/latencystats.h"
 
 /*
 // Small functions used to improve readability of code in main.
@@ -97,6 +98,8 @@ int main(int argc, char** argv) {
 
 	Orderbook book = {};
 	std::ofstream trace(std::string(PROJECT_ROOT) + "/trace.txt");
+	LatencyStats parse_stats;
+	LatencyStats apply_stats;
 
 	for (size_t i = 0; i < messages.size(); i++)
 	{
@@ -109,14 +112,22 @@ int main(int argc, char** argv) {
 
 		switch (uint8_t msg_type = data[0]) {
 		case 'A': {
+
+			auto t0 = std::chrono::steady_clock::now();
 			auto order = parse_add(data, length, 0);
+			auto t1 = std::chrono::steady_clock::now();
+			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+
 			if (!order.has_value())
 			{
 				WriteTraceEntry(trace, i, 'A', 0, false, "malformed", book);
 				std::cerr << "Message " << i << ": malformed 'A' message -- aborting." << std::endl;
 				return 1;
 			}
+			auto t2 = std::chrono::steady_clock::now();
 			AddResult result = AddOrder(&book, *order);
+			auto t3 = std::chrono::steady_clock::now();
+			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
 			
 			const char* reason = nullptr;
 			if (result == AddResult::Evicted) reason = "Evicted worst order";
@@ -134,14 +145,23 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'D': {
+			auto t0 = std::chrono::steady_clock::now();
 			auto orderId = parse_delete(data, length, 0);
+			auto t1 = std::chrono::steady_clock::now();
+			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+
 			if (!orderId.has_value())
 			{
 				WriteTraceEntry(trace, i, 'D', 0, false, "Malformed", book);
 				std::cerr << "Message " << i << ": malformed 'D' message -- aborting." << std::endl;
 				return 1;
 			}
+
+			auto t2 = std::chrono::steady_clock::now();
 			bool result = CancelOrder(&book, *orderId);
+			auto t3 = std::chrono::steady_clock::now();
+			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+
 			if (!result)
 			{
 				WriteTraceEntry(trace, i, 'D', *orderId, result, "not_found", book);
@@ -153,7 +173,12 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'U': {
+
+			auto t0 = std::chrono::steady_clock::now();
 			auto fields = parse_replace(data, length, 0);
+			auto t1 = std::chrono::steady_clock::now();
+			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+
 			if (!fields.has_value())
 			{	
 				WriteTraceEntry(trace, i, 'U', 0, false, "malformed", book);
@@ -169,7 +194,12 @@ int main(int argc, char** argv) {
 				return 1;
 			}
 			OrderModify mod{ fields->OldOrderId, fields->NewOrderId, side, fields->price, fields->quantity };
+
+			auto t2 = std::chrono::steady_clock::now();
 			ModifyResult result = ModifyOrder(&book, mod);
+			auto t3 = std::chrono::steady_clock::now();
+			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+
 			const char* reason = nullptr;
 			if (result == ModifyResult::Evicted) reason = "Evicted worst";
 			if (result == ModifyResult::Discarded) reason = "Book full - Not Competitive";
@@ -189,7 +219,12 @@ int main(int argc, char** argv) {
 			break;
 		}
 		case 'E': {
+
+			auto t0 = std::chrono::steady_clock::now();
 			auto exec = parse_execute(data, length, 0);
+			auto t1 = std::chrono::steady_clock::now();
+			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+
 			if (!exec.has_value())
 			{
 				WriteTraceEntry(trace, i, 'E', 0, false, "malformed", book);
@@ -199,7 +234,11 @@ int main(int argc, char** argv) {
 			}
 			OrderExecute order_exec{ exec->orderId, exec->executedQuantity, exec->matchId };
 
+			auto t2 = std::chrono::steady_clock::now();
 			bool result = ExecuteOrder(&book, order_exec);
+			auto t3 = std::chrono::steady_clock::now();
+			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+
 			WriteTraceEntry(trace, i, 'E', exec->orderId, result, result ? nullptr : "not_found", book);
 			if (!result)
 			{
@@ -220,6 +259,9 @@ int main(int argc, char** argv) {
 	std::cout << "Processed " << messages.size() << " messages successfully." << std::endl;
 	std::cout << "Final book state: bids=" 
 		<< static_cast<int>(book.bid_count) << " asks=" << static_cast<int>(book.ask_count) << std::endl;
+
+	parse_stats.report("parse");
+	apply_stats.report("apply");
 
 	return 0;
 }

@@ -58,6 +58,7 @@ enable_strict_warnings(test_moldudp64)
 # Generator Test
 add_executable(gen_test
     test/gen_test.cpp
+        include/latencystats.h
 )
 target_link_options(gen_test PRIVATE -static)
 target_include_directories(gen_test PRIVATE include)
