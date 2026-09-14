@@ -100,6 +100,10 @@ int main(int argc, char** argv) {
 	std::ofstream trace(std::string(PROJECT_ROOT) + "/trace.txt");
 	LatencyStats parse_stats;
 	LatencyStats apply_stats;
+	// Prevent a vector resize inside a timing window -- a mid-loop
+	// reallocation shows up as an outlier that wasn't really there.
+	parse_stats.reserve(messages.size());
+	apply_stats.reserve(messages.size());
 
 	for (size_t i = 0; i < messages.size(); i++)
 	{
@@ -116,7 +120,7 @@ int main(int argc, char** argv) {
 			auto t0 = std::chrono::steady_clock::now();
 			auto order = parse_add(data, length, 0);
 			auto t1 = std::chrono::steady_clock::now();
-			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+			parse_stats.record(t1 - t0);
 
 			if (!order.has_value())
 			{
@@ -127,7 +131,7 @@ int main(int argc, char** argv) {
 			auto t2 = std::chrono::steady_clock::now();
 			AddResult result = AddOrder(&book, *order);
 			auto t3 = std::chrono::steady_clock::now();
-			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+			apply_stats.record(t3 - t2);
 			
 			const char* reason = nullptr;
 			if (result == AddResult::Evicted) reason = "Evicted worst order";
@@ -148,7 +152,7 @@ int main(int argc, char** argv) {
 			auto t0 = std::chrono::steady_clock::now();
 			auto orderId = parse_delete(data, length, 0);
 			auto t1 = std::chrono::steady_clock::now();
-			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+			parse_stats.record(t1 - t0);
 
 			if (!orderId.has_value())
 			{
@@ -160,7 +164,7 @@ int main(int argc, char** argv) {
 			auto t2 = std::chrono::steady_clock::now();
 			bool result = CancelOrder(&book, *orderId);
 			auto t3 = std::chrono::steady_clock::now();
-			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+			apply_stats.record(t3 - t2);
 
 			if (!result)
 			{
@@ -177,7 +181,7 @@ int main(int argc, char** argv) {
 			auto t0 = std::chrono::steady_clock::now();
 			auto fields = parse_replace(data, length, 0);
 			auto t1 = std::chrono::steady_clock::now();
-			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+			parse_stats.record(t1 - t0);
 
 			if (!fields.has_value())
 			{	
@@ -198,7 +202,7 @@ int main(int argc, char** argv) {
 			auto t2 = std::chrono::steady_clock::now();
 			ModifyResult result = ModifyOrder(&book, mod);
 			auto t3 = std::chrono::steady_clock::now();
-			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+			apply_stats.record(t3 - t2);
 
 			const char* reason = nullptr;
 			if (result == ModifyResult::Evicted) reason = "Evicted worst";
@@ -223,7 +227,7 @@ int main(int argc, char** argv) {
 			auto t0 = std::chrono::steady_clock::now();
 			auto exec = parse_execute(data, length, 0);
 			auto t1 = std::chrono::steady_clock::now();
-			parse_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+			parse_stats.record(t1 - t0);
 
 			if (!exec.has_value())
 			{
@@ -237,7 +241,7 @@ int main(int argc, char** argv) {
 			auto t2 = std::chrono::steady_clock::now();
 			bool result = ExecuteOrder(&book, order_exec);
 			auto t3 = std::chrono::steady_clock::now();
-			apply_stats.record(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+			apply_stats.record(t3 - t2);
 
 			WriteTraceEntry(trace, i, 'E', exec->orderId, result, result ? nullptr : "not_found", book);
 			if (!result)
@@ -260,8 +264,11 @@ int main(int argc, char** argv) {
 	std::cout << "Final book state: bids=" 
 		<< static_cast<int>(book.bid_count) << " asks=" << static_cast<int>(book.ask_count) << std::endl;
 
-	parse_stats.report("parse");
-	apply_stats.report("apply");
+	// Measure and subtract the observer's own cost so the printed
+	// numbers are the work, not the work + clock reads.
+	const auto timer_overhead = LatencyStats::estimate_timer_overhead();
+	parse_stats.report("parse", timer_overhead);
+	apply_stats.report("apply", timer_overhead);
 
 	return 0;
 }
