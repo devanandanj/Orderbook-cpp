@@ -45,15 +45,16 @@ void Test_AddOrder_NormalInsert() {
 
 void Test_AddOrder_EvictWorstOnFull_Buy() {
     Orderbook ob{};
-    // Fill 32 buy orders at prices 100..131 (worst = 100, id 1000).
-    FillSide(&ob, Side::Buy, 100, 32);
-    assert(ob.bid_count == 32);
+    // Fill the buy side to capacity at strictly increasing prices from 100
+    // (worst = 100, id 1000; best = 100+MAX-1).
+    FillSide(&ob, Side::Buy, 100, MAX_ORDERS_PER_SIDE);
+    assert(ob.bid_count == MAX_ORDERS_PER_SIDE);
     assert(ob.bid_reject_book_full == 0);
 
     // Incoming order more competitive than worst (100) -> should evict.
     AddResult r = AddOrder(&ob, MakeOrder(9999, Side::Buy, 200, 5));
     assert(r == AddResult::Evicted);
-    assert(ob.bid_count == 32); // count unchanged, still full
+    assert(ob.bid_count == MAX_ORDERS_PER_SIDE); // count unchanged, still full
 
     // Worst-priced order (100) must be gone; new order must be present.
     bool foundOld = false, foundNew = false;
@@ -68,9 +69,10 @@ void Test_AddOrder_EvictWorstOnFull_Buy() {
 
 void Test_AddOrder_EvictWorstOnFull_Sell() {
     Orderbook ob{};
-    // Fill 32 sell orders at prices 200..169 (worst = 200, id 1000).
-    FillSide(&ob, Side::Sell, 200, 32);
-    assert(ob.ask_count == 32);
+    // Fill the sell side to capacity at strictly decreasing prices from
+    // 200 (worst = 200, id 1000; best = 200-(MAX-1)).
+    FillSide(&ob, Side::Sell, 200, MAX_ORDERS_PER_SIDE);
+    assert(ob.ask_count == MAX_ORDERS_PER_SIDE);
 
     // Incoming order more competitive (lower price) than worst (200).
     AddResult r = AddOrder(&ob, MakeOrder(9999, Side::Sell, 50, 5));
@@ -88,12 +90,12 @@ void Test_AddOrder_EvictWorstOnFull_Sell() {
 
 void Test_AddOrder_RejectOnFull_NotCompetitive() {
     Orderbook ob{};
-    FillSide(&ob, Side::Buy, 100, 32); // prices 100..131, worst = 100
+    FillSide(&ob, Side::Buy, 100, MAX_ORDERS_PER_SIDE); // worst = 100
 
     // Incoming order worse than or equal to worst resting price -> reject.
     AddResult r1 = AddOrder(&ob, MakeOrder(9999, Side::Buy, 50, 5));
     assert(r1 == AddResult::Discarded);
-    assert(ob.bid_count == 32);
+    assert(ob.bid_count == MAX_ORDERS_PER_SIDE);
     assert(ob.bid_reject_book_full == 1);
 
     // Equal price also does not count as more competitive.
@@ -142,7 +144,7 @@ void Test_ModifyOrder_NotFound() {
 
 void Test_ModifyOrder_Evicted() {
     Orderbook ob{};
-    FillSide(&ob, Side::Buy, 100, 32); // ids 1000..1031, prices 100..131
+    FillSide(&ob, Side::Buy, 100, MAX_ORDERS_PER_SIDE); // fills to capacity
 
     // Modify the worst order (id 1000, price 100) to a much better price
     // via a different id. CancelOrder removes it first, so on the
@@ -290,24 +292,26 @@ void Test_FullBookSnapshot_ReflectsEvictionAndFills() {
     // Regression guard: snapshot after eviction + partial fill must
     // show the post-mutation state, not stale data.
     Orderbook ob{};
-    FillSide(&ob, Side::Buy, 100, 32); // ids 1000..1031
+    FillSide(&ob, Side::Buy, 100, MAX_ORDERS_PER_SIDE); // ids 1000..(1000+MAX-1)
 
     AddOrder(&ob, MakeOrder(9999, Side::Buy, 500, 1)); // evicts id 1000
-    ExecuteOrder(&ob, OrderExecute{1031, 3, 1}); // partial fill on id 1031 (price 131)
+    // Partial fill on the top of the fill range (id 1000+MAX-1, the best-priced).
+    const OrderId topId = 1000 + MAX_ORDERS_PER_SIDE - 1;
+    ExecuteOrder(&ob, OrderExecute{topId, 3, 1});
 
     BookSnapshot snap{};
     FullBookSnapshot(&ob, &snap);
-    assert(snap.bid_count == 32);
+    assert(snap.bid_count == MAX_ORDERS_PER_SIDE);
     assert(snap.bids[0].orderId == 9999); // best price 500
-    bool found1031 = false;
+    bool foundTop = false;
     for (uint8_t i = 0; i < snap.bid_count; ++i) {
-        if (snap.bids[i].orderId == 1031) {
-            found1031 = true;
+        if (snap.bids[i].orderId == topId) {
+            foundTop = true;
             assert(snap.bids[i].quantity == 7); // 10 - 3
         }
         assert(snap.bids[i].orderId != 1000); // evicted, must not appear
     }
-    assert(found1031);
+    assert(foundTop);
     printf("PASS: Test_FullBookSnapshot_ReflectsEvictionAndFills\n");
 }
 

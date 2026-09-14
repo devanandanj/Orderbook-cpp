@@ -23,9 +23,9 @@ struct SortedOrders{
 
 /* SortSide
    Copies 'src' (count entries) into 'out', sorted ascending by orderId.
-   Simple insertion sort -- fine at this size (max 32), this runs on a
-   debug/verification path, not the hot path, so efficiency is not a
-   concern here.
+   Simple insertion sort -- fine at this size (max MAX_ORDERS_PER_SIDE),
+   this runs on a debug/verification path, not the hot path, so efficiency
+   is not a concern here.
 */
 
 SortedOrders SortSide(const Order* src, uint8_t count);

@@ -4,7 +4,8 @@
    ----------------
    Simple in-memory orderbook representation used by the example code.
    This implementation is intentionally compact for teaching purposes:
-   - bids and asks are stored in fixed-size arrays of 32 entries each
+   - bids and asks are stored in fixed-size arrays of MAX_ORDERS_PER_SIDE
+     entries each (see using.h)
    - there is no price-level aggregation or sorted data structure
 
    This file declares the Orderbook structure and a small set
@@ -25,8 +26,8 @@
    silently when capacity is exhausted.
 */
 struct Orderbook {
-	Order bids[32]{};
-	Order asks[32]{};
+	Order bids[MAX_ORDERS_PER_SIDE]{};
+	Order asks[MAX_ORDERS_PER_SIDE]{};
 	Bids bid_count{};
 	Asks ask_count{};
     uint64_t bid_reject_book_full{};
@@ -89,8 +90,8 @@ struct BookLevel {
 };
 
 struct BookSnapshot{
-    BookLevel bids[32]{};
-    BookLevel asks[32]{};
+    BookLevel bids[MAX_ORDERS_PER_SIDE]{};
+    BookLevel asks[MAX_ORDERS_PER_SIDE]{};
     Bids bid_count{};
     Asks ask_count{};
 };

@@ -6,10 +6,16 @@
    a SEPARATE executable target (see CMakeLists.txt note at the bottom
    of this file). Do NOT add this to the same target as src/main.cpp.
 
-   This particular scenario is a stress test for the 32-order-per-side
-   capacity + eviction logic added to AddOrder/ModifyOrder. It builds a
-   single deterministic message sequence that walks through every new
-   code path so the resulting trace.txt can be checked by hand,
+   This particular scenario is a stress test for the ORIGINAL 32-order-
+   per-side capacity + eviction logic. MAX_ORDERS_PER_SIDE has since been
+   bumped to 64 (see include/using.h); the operations here still exercise
+   Add/Delete/Update/Execute semantics but no longer touch the eviction
+   boundary because they only fill 32 slots out of 64. A follow-up scenario
+   at the new capacity is TODO -- do not treat this file as a capacity
+   stress test in its current form.
+
+   It builds a single deterministic message sequence that walks through
+   every code path so the resulting trace.txt can be checked by hand,
    message-by-message, against the table in the commit/PR description.
 
    Message-by-message plan (see README table for the human-readable
