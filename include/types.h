@@ -32,12 +32,12 @@ struct Order {
    Represents a replace/update instruction: the old order id being
    replaced and the new order fields. Note: partial executions are not
    tracked by this simple example, so quantity is treated as the new
-   resting quantity after the replace.
+   resting quantity after the replace. No side field: ITCH 'U' carries
+   none, ModifyOrder takes it from the resting order.
 */
 struct OrderModify {
     OrderId  oldOrderId;
     OrderId  newOrderId;
-    Side     side;
     Price    price;
     Quantity quantity;
 };

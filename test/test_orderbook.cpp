@@ -125,7 +125,7 @@ void Test_CancelOrder_FoundAndNotFound() {
 void Test_ModifyOrder_Replaced() {
     Orderbook ob{};
     AddOrder(&ob, MakeOrder(1, Side::Buy, 100, 10));
-    OrderModify mod{1, 2, Side::Buy, 105, 20};
+    OrderModify mod{1, 2, 105, 20};
     ModifyResult r = ModifyOrder(&ob, mod);
     assert(r == ModifyResult::Replaced);
     assert(ob.bid_count == 1);
@@ -134,9 +134,19 @@ void Test_ModifyOrder_Replaced() {
     printf("PASS: Test_ModifyOrder_Replaced\n");
 }
 
+void Test_ModifyOrder_KeepsSideFromBook() {
+    Orderbook ob{};
+    AddOrder(&ob, MakeOrder(1, Side::Sell, 200, 10));
+    ModifyResult r = ModifyOrder(&ob, OrderModify{1, 2, 190, 5});
+    assert(r == ModifyResult::Replaced);
+    assert(ob.bid_count == 0 && ob.ask_count == 1);
+    assert(ob.asks[0].orderId == 2 && ob.asks[0].side == Side::Sell);
+    printf("PASS: Test_ModifyOrder_KeepsSideFromBook\n");
+}
+
 void Test_ModifyOrder_NotFound() {
     Orderbook ob{};
-    OrderModify mod{999, 1000, Side::Buy, 105, 20};
+    OrderModify mod{999, 1000, 105, 20};
     ModifyResult r = ModifyOrder(&ob, mod);
     assert(r == ModifyResult::NotFound);
     printf("PASS: Test_ModifyOrder_NotFound\n");
@@ -326,6 +336,7 @@ int main() {
     Test_CancelOrder_FoundAndNotFound();
 
     Test_ModifyOrder_Replaced();
+    Test_ModifyOrder_KeepsSideFromBook();
     Test_ModifyOrder_NotFound();
     Test_ModifyOrder_Evicted();
 

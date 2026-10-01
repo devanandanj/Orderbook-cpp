@@ -126,33 +126,51 @@ AddResult AddOrder(Orderbook* orderbook, const Order& order) {
     return AddResult::Discarded;
 }
 
+/* FindOrder
+   Locates an order id on either side. Ids are unique across the whole
+   book, so this is the software form of the RTL's single-cycle
+   128-wide broadcast compare: one lookup per D/U/E message.
+*/
+struct OrderSlot {
+    Order* arr;
+    uint8_t* count;
+    int idx;    // -1 when not found
+};
+
+static OrderSlot FindOrder(Orderbook* orderbook, const OrderId orderId) {
+    int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, orderId);
+    if (idx >= 0) return {orderbook->bids, &orderbook->bid_count, idx};
+    idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, orderId);
+    if (idx >= 0) return {orderbook->asks, &orderbook->ask_count, idx};
+    return {nullptr, nullptr, -1};
+}
+
 /* CancelOrder
    Remove an order by replacing it with the last element in the array
    and decrementing the count.
 */
 bool CancelOrder(Orderbook* orderbook, OrderId orderId) {
-    int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, orderId);
-    if (idx >= 0) {
-        RemoveAt(orderbook->bids, &orderbook->bid_count, idx);
-        return true;
-    }
-    idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, orderId);
-    if (idx >= 0) {
-        RemoveAt(orderbook->asks, &orderbook->ask_count, idx);
-        return true;
-    }
-    return false;
+    const OrderSlot s = FindOrder(orderbook, orderId);
+    if (s.idx < 0) return false;
+    RemoveAt(s.arr, s.count, s.idx);
+    return true;
 }
 
 /* ModifyOrder
-   Implement a replace by canceling the old order (if present) and
-   adding the new order.
+   Implement a replace by removing the old order (if present) and
+   adding the new one on the old order's side. The ITCH 'U' message
+   carries no side, so it is taken from the resting order -- the same
+   lookup that finds it.
 */
 ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
-    if (!CancelOrder(orderbook, mod.oldOrderId))
+    const OrderSlot s = FindOrder(orderbook, mod.oldOrderId);
+    if (s.idx < 0)
         return ModifyResult::NotFound;
 
-    const Order newOrder{.orderId = mod.newOrderId, .side = mod.side, .price = mod.price, .quantity = mod.quantity};
+    const Side side = s.arr[s.idx].side;
+    RemoveAt(s.arr, s.count, s.idx);
+
+    const Order newOrder{.orderId = mod.newOrderId, .side = side, .price = mod.price, .quantity = mod.quantity};
     switch (AddOrder(orderbook, newOrder)) {
         case AddResult::Inserted: return ModifyResult::Replaced;
         case AddResult::Evicted:  return ModifyResult::Evicted;
@@ -166,23 +184,13 @@ ModifyResult ModifyOrder(Orderbook* orderbook, const OrderModify& mod) {
    otherwise the quantity is reduced.
 */
 bool ExecuteOrder(Orderbook* orderbook, const OrderExecute& exec) {
-    int idx = FindOrderIndex(orderbook->bids, orderbook->bid_count, exec.orderId);
-    if (idx >= 0) {
-        if (Order& o = orderbook->bids[idx]; exec.executedQuantity >= o.quantity)
-            RemoveAt(orderbook->bids, &orderbook->bid_count, idx);
-        else
-            o.quantity -= exec.executedQuantity;
-        return true;
-    }
-    idx = FindOrderIndex(orderbook->asks, orderbook->ask_count, exec.orderId);
-    if (idx >= 0) {
-        if (Order& o = orderbook->asks[idx]; exec.executedQuantity >= o.quantity)
-            RemoveAt(orderbook->asks, &orderbook->ask_count, idx);
-        else
-            o.quantity -= exec.executedQuantity;
-        return true;
-    }
-    return false;
+    const OrderSlot s = FindOrder(orderbook, exec.orderId);
+    if (s.idx < 0) return false;
+    if (Order& o = s.arr[s.idx]; exec.executedQuantity >= o.quantity)
+        RemoveAt(s.arr, s.count, s.idx);
+    else
+        o.quantity -= exec.executedQuantity;
+    return true;
 }
 
 void FullBookSnapshot(const Orderbook *orderbook, BookSnapshot *snapshot) {

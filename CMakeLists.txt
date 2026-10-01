@@ -1,4 +1,4 @@
-﻿cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.10)
 
 if (POLICY CMP0141)
     cmake_policy(SET CMP0141 NEW)
@@ -15,62 +15,53 @@ function(enable_strict_warnings target)
     endif()
 endfunction()
 
-# Add source to this project's executable.
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include_directories(include)
+
+# Self-contained exe outside the build dir (llvm-mingw / MinGW runtime DLLs).
+function(link_static target)
+    if (NOT MSVC)
+        target_link_options(${target} PRIVATE -static)
+    endif()
+endfunction()
+
+# Tests are assert-based: keep asserts live in Release too.
+function(add_unit_test name)
+    add_executable(${name} ${ARGN})
+    target_compile_options(${name} PRIVATE -UNDEBUG)
+    enable_strict_warnings(${name})
+    link_static(${name})
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
 add_executable (Orderbook-cpp
         "src/main.cpp"
-        "src/Orderbook.cpp"
+        "src/orderbook.cpp"
         "src/itchparser.cpp"
         "src/moldudp64.cpp"
         "src/trace.cpp"
+        "src/snapshot.cpp"
 )
 enable_strict_warnings(Orderbook-cpp)
+link_static(Orderbook-cpp)
+target_compile_definitions(Orderbook-cpp PRIVATE PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 
-# test orderbook
-add_executable(test_orderbook test/test_orderbook.cpp src/orderbook.cpp)
-target_link_options(Orderbook-cpp PRIVATE -static)
-enable_strict_warnings(test_orderbook)
-
-add_executable(test_itchparser test/test_itchparser.cpp src/itchparser.cpp)
-target_compile_features(test_itchparser PRIVATE cxx_std_20)
-enable_strict_warnings(test_itchparser)
-
-# mold udp
-add_executable(test_moldudp64
-    test/test_moldudp64.cpp
-    src/moldudp64.cpp
-    src/itchparser.cpp   # moldudp64.cpp depends on read_u16_be from here
-)
-target_include_directories(test_moldudp64 PRIVATE include)
-target_compile_features(test_moldudp64 PRIVATE cxx_std_20)
-enable_strict_warnings(test_moldudp64)
-
-# Scoreboard Self-Checker Test
-#add_executable(scoreboard_test
-#    test/scoreboard_test.cpp
-#    src/Orderbook.cpp
-#    src/itchparser.cpp
-#    src/moldudp64.cpp
-#)
-#target_include_directories(scoreboard_test PRIVATE include)
-#target_compile_features(scoreboard_test PRIVATE cxx_std_20)
-#enable_strict_warnings(scoreboard_test)
-
-# Generator Test
-add_executable(gen_test
-    test/gen_test.cpp
-        include/latencystats.h
-)
-target_link_options(gen_test PRIVATE -static)
-target_include_directories(gen_test PRIVATE include)
-target_compile_features(gen_test PRIVATE cxx_std_20)
+add_executable(gen_test test/gen_test.cpp)
 enable_strict_warnings(gen_test)
+link_static(gen_test)
 
-target_include_directories(Orderbook-cpp PRIVATE include)
+enable_testing()
+add_unit_test(test_orderbook  test/test_orderbook.cpp src/orderbook.cpp)
+add_unit_test(test_itchparser test/test_itchparser.cpp src/itchparser.cpp)
+add_unit_test(test_moldudp64  test/test_moldudp64.cpp src/moldudp64.cpp src/itchparser.cpp)
+add_unit_test(test_snapshot   test/test_snapshot.cpp src/snapshot.cpp src/trace.cpp
+                              src/orderbook.cpp src/itchparser.cpp)
 
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET Orderbook-cpp PROPERTY CXX_STANDARD 20)
-endif()
-
-target_compile_definitions(Orderbook-cpp PRIVATE
-        PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
-)
+# End-to-end: generate the stress feed, run the model, check its summary.
+add_test(NAME gen_stress COMMAND gen_test)
+set_tests_properties(gen_stress PROPERTIES FIXTURES_SETUP stress_feed)
+add_test(NAME stress COMMAND Orderbook-cpp stress_test.mold ${CMAKE_BINARY_DIR}/snapshot.bin)
+set_tests_properties(stress PROPERTIES
+    FIXTURES_REQUIRED stress_feed
+    PASS_REGULAR_EXPRESSION "bids=1 asks=1[\r\n]+Rejects [(]book full[)]: bid=2 ask=2 unknown_order_ref=3")

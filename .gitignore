@@ -362,3 +362,10 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+.claude
+
+# Model outputs
+trace.txt
+snapshot.bin
+*.mold

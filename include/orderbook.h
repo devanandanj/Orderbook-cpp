@@ -57,7 +57,8 @@ bool CancelOrder(Orderbook* orderbook, OrderId order);
 
 /* ModifyOrder
    Apply a replace/modify: remove the old order (if present) and add the
-   new one. The caller must populate an OrderModify describing the change.
+   new one on the old order's side. Returns NotFound if the old id is
+   not resting (e.g. it was evicted/discarded earlier by the bounded book).
 */
 enum class ModifyResult : uint8_t
 {

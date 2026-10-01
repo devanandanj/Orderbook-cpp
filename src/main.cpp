@@ -6,6 +6,16 @@
    envelope into inner messages, parses each message and applies it
    against an in-memory Orderbook.
 
+   Outputs:
+   - snapshot.bin: two SNAP_PACKET_LEN packets (bids, asks) per message,
+     byte-identical to what the RTL streams. This is the scoreboard trace.
+   - trace.txt: human-readable dump of the same state.
+
+   A D/U/E against an order that is not resting is NOT an error: the book
+   is bounded, so the feed will reference orders it evicted or discarded.
+   Like the RTL, the model raises unknown_order_ref for that message,
+   leaves the book unchanged and carries on.
+
 */
 
 #include <iostream>
@@ -18,19 +28,8 @@
 #include "../include/itchparser.h"
 #include "../include/trace.h"
 #include "../include/latencystats.h"
+#include "../include/snapshot.h"
 
-/*
-// Small functions used to improve readability of code in main.
-static Order MakeOrder(OrderId orderId, Side side, Price price, Quantity quantity) {
-	return Order{ orderId, side, price, quantity };
-}
-static OrderModify MakeOrderModify(OrderId OldOrderId, OrderId NewOrderId, Side side, Price price, Quantity quantity) {
-	return OrderModify{ OldOrderId, NewOrderId, side, price, quantity };
-}
-bool IsBuyOrder(const Order& order) {
-	return order.side == Side::Buy;
-}
-*/
 /* read_file_bytes
    Read the entire file into a vector<uint8_t>. Returns an empty vector on
    failure. This helper is synchronous and loads the whole file into memory
@@ -53,33 +52,10 @@ static std::vector<uint8_t> read_file_bytes(const char* path) {
 	return buffer;
 }
 
-/* FindOrderSide
-   Look up the side (Buy/Sell) for an existing order id by searching
-   both the bids and asks arrays. Returns true and sets 'side' when found.
-*/
-static bool FindOrderSide(const Orderbook& book, const OrderId orderId, Side& side) {
-	for (uint8_t i = 0; i < book.bid_count; i++)
-	{
-		if (book.bids[i].orderId == orderId)
-		{
-			side = Side::Buy;
-			return true;
-		}
-	}
-	for (uint8_t i = 0; i < book.ask_count; i++)
-	{
-		if (book.asks[i].orderId == orderId) {
-			side = Side::Sell;
-			return true;
-		}
-	}
-	return false;
-}
-
 int main(int argc, char** argv) {
-	if (argc != 2)
+	if (argc != 2 && argc != 3)
 	{
-		std::cerr << "Usage: " << argv[0] << " <MoldUDP64_file>" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " <MoldUDP64_file> [snapshot_out]" << std::endl;
 		return 1;
 	}
 
@@ -96,8 +72,21 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	// ponytail: file holds one MoldUDP64 packet, so no gap detection and
+	// mold_gap_seen stays 0. Add per-packet seq tracking with multi-packet input.
+	const uint64_t mold_seq = read_u64_be(buf.data(), MOLDUDP64_SEQNUM_OFFSET);
+
 	Orderbook book = {};
 	std::ofstream trace(std::string(PROJECT_ROOT) + "/trace.txt");
+	const std::string snapshot_path = argc == 3 ? argv[2] : std::string(PROJECT_ROOT) + "/snapshot.bin";
+	std::ofstream snapshot(snapshot_path, std::ios::binary);
+	if (!snapshot)
+	{
+		std::cerr << "Failed to open " << snapshot_path << " for writing." << std::endl;
+		return 1;
+	}
+	uint32_t snap_seq = 0;
+	uint64_t unknown_order_refs = 0;
 	LatencyStats parse_stats;
 	LatencyStats apply_stats;
 	// Prevent a vector resize inside a timing window -- a mid-loop
@@ -114,6 +103,7 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 
+		bool unknown_ref = false;
 		switch (uint8_t msg_type = data[0]) {
 		case 'A': {
 
@@ -166,14 +156,8 @@ int main(int argc, char** argv) {
 			auto t3 = std::chrono::steady_clock::now();
 			apply_stats.record(t3 - t2);
 
-			if (!result)
-			{
-				WriteTraceEntry(trace, i, 'D', *orderId, result, "not_found", book);
-				std::cerr << "Message " << i << ": CancelOrder failed for Order ID = "
-					<< (unsigned long long) * orderId << " -- aborting." << std::endl;
-				return 1;
-			}
-			WriteTraceEntry(trace, i, 'D', *orderId, result, nullptr, book);
+			unknown_ref = !result;
+			WriteTraceEntry(trace, i, 'D', *orderId, result, result ? nullptr : "not_found", book);
 			break;
 		}
 		case 'U': {
@@ -189,37 +173,18 @@ int main(int argc, char** argv) {
 				std::cerr << "Message " << i << ": malformed 'U' message -- aborting." << std::endl;
 				return 1;
 			}
-			Side side;
-			if (!FindOrderSide(book, fields->OldOrderId, side))
-			{
-				WriteTraceEntry(trace, i, 'U', fields->OldOrderId, false, "old_id_not_found", book);
-				std::cerr << "Message " << i << ": Replace references unknown Old Order ID = "
-					<< (unsigned long long)fields->OldOrderId << " -- aborting." << std::endl;
-				return 1;
-			}
-			OrderModify mod{ fields->OldOrderId, fields->NewOrderId, side, fields->price, fields->quantity };
+			OrderModify mod{ fields->OldOrderId, fields->NewOrderId, fields->price, fields->quantity };
 
 			auto t2 = std::chrono::steady_clock::now();
 			ModifyResult result = ModifyOrder(&book, mod);
 			auto t3 = std::chrono::steady_clock::now();
 			apply_stats.record(t3 - t2);
 
-			const char* reason = nullptr;
-			if (result == ModifyResult::Evicted) reason = "Evicted worst";
-			if (result == ModifyResult::Discarded) reason = "Book full - Not Competitive";
-			if (result == ModifyResult::NotFound) reason = "Old ID is not found";
-
-			bool accepted = (result == ModifyResult::Replaced || result == ModifyResult::Evicted);
-			WriteTraceEntry(trace, i, 'U', fields->NewOrderId, accepted, reason, book);
-
-			if (!accepted)
-			{
-				WriteTraceEntry(trace, i, 'E', 0, false, "malformed", book);
-				std::cerr << "Message " << i
-					<< ": ModifyOrder failed (book full after cancel) for New Order ID "
-					<< (unsigned long long)fields->NewOrderId << " --aborting" << std::endl;
-				return 1;
-			}
+			// Old order is removed first, so the side always has room:
+			// Replaced or NotFound are the only reachable outcomes.
+			unknown_ref = result == ModifyResult::NotFound;
+			WriteTraceEntry(trace, i, 'U', fields->NewOrderId, !unknown_ref,
+				unknown_ref ? "old_id_not_found" : nullptr, book);
 			break;
 		}
 		case 'E': {
@@ -243,13 +208,8 @@ int main(int argc, char** argv) {
 			auto t3 = std::chrono::steady_clock::now();
 			apply_stats.record(t3 - t2);
 
+			unknown_ref = !result;
 			WriteTraceEntry(trace, i, 'E', exec->orderId, result, result ? nullptr : "not_found", book);
-			if (!result)
-			{
-				std::cerr << "Message " << i << ": ExecuteOrder failed for Order ID = "
-					<< (unsigned long long)exec->orderId << " -- aborting." << std::endl;
-				return 1;
-			}
 			break;
 		}
 		default: {
@@ -258,11 +218,24 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 		}
+
+		unknown_order_refs += unknown_ref;
+		const uint8_t status = unknown_ref ? 1u << SNAP_STATUS_UNKNOWN_ORDER_REF : 0;
+		for (const Side side : { Side::Buy, Side::Sell })
+		{
+			uint8_t pkt[SNAP_PACKET_LEN];
+			EncodeSnapshotPacket(pkt, book, side, status, snap_seq++, mold_seq, static_cast<uint32_t>(i));
+			snapshot.write(reinterpret_cast<const char*>(pkt), SNAP_PACKET_LEN);
+		}
 	}
 
 	std::cout << "Processed " << messages.size() << " messages successfully." << std::endl;
 	std::cout << "Final book state: bids=" 
 		<< static_cast<int>(book.bid_count) << " asks=" << static_cast<int>(book.ask_count) << std::endl;
+	std::cout << "Rejects (book full): bid=" << book.bid_reject_book_full
+		<< " ask=" << book.ask_reject_book_full
+		<< " unknown_order_ref=" << unknown_order_refs << std::endl;
+	std::cout << "Wrote " << snap_seq << " snapshot packets to " << snapshot_path << std::endl;
 
 	// Measure and subtract the observer's own cost so the printed
 	// numbers are the work, not the work + clock reads.

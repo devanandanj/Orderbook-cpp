@@ -11,6 +11,7 @@ This is a golden model — a software reference for logic that is eventually mea
 - **ITCH 5.0 parsing** — Add, Delete, Replace, Execute, decoded from raw big-endian bytes.
 - **MoldUDP64 de-framing** — unpacks a packet into its constituent ITCH messages before dispatch.
 - **Bounded book with eviction** — when a side is full, an incoming Add evicts the worst resting order only if it's more competitive; otherwise it's discarded. Ties are broken FCFS (existing order keeps its place).
+- **Unknown refs are flagged, not fatal** — a D/U/E for an order the bounded book evicted or discarded sets `unknown_order_ref` and leaves the book unchanged, matching the RTL.
 - **Warnings-as-errors** — every target builds with `/W4 /WX` (MSVC) or `-Wall -Wextra -Werror`, applied uniformly via a shared CMake helper.
 
 ## Components
@@ -21,8 +22,10 @@ This is a golden model — a software reference for logic that is eventually mea
 | `src/itchparser.cpp` | ITCH 5.0 message parsers |
 | `src/moldudp64.cpp` | MoldUDP64 packet de-framing |
 | `src/orderbook.cpp` | Order book state and mutation logic (Add/Cancel/Replace/Execute, eviction, discard) |
+| `src/snapshot.cpp` | Binary book snapshot (`snapshot.bin`): two 1056-byte big-endian packets (bids, asks) per ITCH message, per `hardware-orderbook/spec/snapshot.yaml`. Byte-identical to the RTL's output — this is the scoreboard trace |
 | `src/trace.cpp` | Per-message text dump (`trace.txt`) — debug aid for eyeballing the book after each mutation. Not the model's product output; the model's job is to maintain the in-memory book state correctly (see `include/orderbook.h`). |
-| `test/gen_test.cpp` | Generates `stress_test.mold`, a 78-message deterministic MoldUDP64 feed exercising eviction, discard, tie-break, cancel, and reuse — symmetrically, on both the bid and ask sides |
+| `test/gen_test.cpp` | Generates `stress_test.mold`, a deterministic MoldUDP64 feed scaled to `MAX_ORDERS_PER_SIDE`, exercising eviction, discard, tie-break, cancel, wipeout, and unknown refs on both sides |
+| `test/test_snapshot.cpp` | Snapshot encoder byte-layout tests |
 | `test/test_orderbook.cpp` | Order book unit tests |
 | `test/test_itchparser.cpp` | ITCH parser unit tests |
 | `test/test_moldudp64.cpp` | MoldUDP64 de-framer unit tests |
@@ -46,14 +49,13 @@ cmake --build --preset x64-debug
 Run against a MoldUDP64 binary file:
 
 ```sh
-./Orderbook-cpp.exe path/to/feed.mold
+./Orderbook-cpp.exe path/to/feed.mold [snapshot_out]   # default: <repo>/snapshot.bin
 ```
 
-Generate and run the stress test feed:
+Run all unit tests plus the end-to-end stress feed:
 
 ```sh
-./gen_test.exe                        # produces stress_test.mold
-./Orderbook-cpp.exe stress_test.mold  # writes trace.txt for manual inspection
+ctest --test-dir out/build/x64-debug
 ```
 
 ## License
