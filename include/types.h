@@ -53,3 +53,13 @@ struct OrderExecute{
     Quantity executedQuantity;
     OrderId matchId;
 };
+
+/* OrderCancel
+   A partial cancel ('X'): remove cancelledQuantity shares from a resting
+   order, leaving the rest in the book. Separate from OrderExecute because
+   a cancel has no match number.
+*/
+struct OrderCancel {
+    OrderId orderId;
+    Quantity cancelledQuantity;
+};

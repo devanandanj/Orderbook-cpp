@@ -120,6 +120,44 @@ static void test_deframe_truncated_message_block() {
     printf("deframe_moldudp64 (truncated message block): PASS\n");
 }
 
+static void test_packet_stream() {
+    /* Three packets back to back:
+       [0]  seq 5, two messages (lengths 3, 1)   -> 20 + 5 + 3 = 28 bytes
+       [28] heartbeat, seq 7                      -> 20 bytes
+       [48] seq 7, one message (length 2)         -> 20 + 4 = 24 bytes
+       [72] end of session                        -> 20 bytes            */
+    uint8_t buf[92] = { 0 };
+    buf[17] = 5;  buf[19] = 2;
+    buf[21] = 3;  buf[22] = 'A'; buf[23] = 'B'; buf[24] = 'C';
+    buf[26] = 1;  buf[27] = 'D';
+    buf[28 + 17] = 7;                                   /* heartbeat: count 0 */
+    buf[48 + 17] = 7; buf[48 + 19] = 1;
+    buf[48 + 21] = 2; buf[48 + 22] = 'E'; buf[48 + 23] = 'F';
+    buf[72 + 18] = 0xFF; buf[72 + 19] = 0xFF;           /* end of session */
+
+    size_t off = 0;
+    auto p = next_moldudp64_packet(buf + off, sizeof(buf) - off);
+    assert(p && p->sequence == 5 && p->count == 2 && p->length == 28);
+    assert(p->messages.size() == 2 && p->messages[1].length == 1 && p->messages[1].data[0] == 'D');
+
+    off += p->length;
+    p = next_moldudp64_packet(buf + off, sizeof(buf) - off);
+    assert(p && p->count == MOLDUDP64_HEARTBEAT && p->length == MOLDUDP64_HEADER_LEN && p->messages.empty());
+
+    off += p->length;
+    p = next_moldudp64_packet(buf + off, sizeof(buf) - off);
+    assert(p && p->sequence == 7 && p->length == 24 && p->messages[0].data[1] == 'F');
+
+    off += p->length;
+    p = next_moldudp64_packet(buf + off, sizeof(buf) - off);
+    assert(p && p->count == MOLDUDP64_END_OF_SESSION && off + p->length == sizeof(buf));
+
+    /* A packet cut short in its last message block is rejected. */
+    assert(!next_moldudp64_packet(buf, 27).has_value());
+    assert(!next_moldudp64_packet(buf, 19).has_value());
+    printf("next_moldudp64_packet (stream): PASS\n");
+}
+
 int main() {
     test_deframe_two_messages();
     test_deframe_zero_extra_messages();
@@ -127,6 +165,7 @@ int main() {
     test_deframe_end_of_session_rejected();
     test_deframe_truncated_header();
     test_deframe_truncated_message_block();
+    test_packet_stream();
 
     printf("\nAll moldudp64 tests PASSED\n");
     return 0;

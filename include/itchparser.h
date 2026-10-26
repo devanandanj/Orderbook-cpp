@@ -45,10 +45,13 @@ total size of each message on the wire. Parsers compare remaining
 buffer length against these values to decide if a whole message is
 available. */
 
-static constexpr size_t ADD_ORDER_LEN      = 36;
-static constexpr size_t ORDER_DELETE_LEN   = 19;
-static constexpr size_t ORDER_REPLACE_LEN  = 35;
-static constexpr size_t ORDER_EXECUTE_LEN = 31;
+static constexpr size_t ADD_ORDER_LEN           = 36;
+static constexpr size_t ORDER_DELETE_LEN        = 19;
+static constexpr size_t ORDER_REPLACE_LEN       = 35;
+static constexpr size_t ORDER_EXECUTE_LEN       = 31;
+static constexpr size_t ADD_ORDER_MPID_LEN      = 40;
+static constexpr size_t ORDER_EXECUTE_PRICE_LEN = 36;
+static constexpr size_t ORDER_CANCEL_LEN        = 23;
 
 /*	Parses an 'A' (Add Order) message at `offset` in `buf`.
 	Parameters:
@@ -99,3 +102,22 @@ The OrderExecute struct (defined in include/types.h) contains the
 decoded fields: orderId, executedQuantity, and matchId. Returns
 std::nullopt when there are not enough bytes for a complete message. */
 std::optional<OrderExecute> parse_execute(const uint8_t* buf, size_t buf_len, size_t offset);
+
+/* Parses an 'F' (Add Order with MPID) message. Same fields and offsets as
+'A' plus a trailing 4-byte attribution the book ignores, so it decodes to
+the same Order. Needs ADD_ORDER_MPID_LEN bytes -- a 36-byte buffer is a
+whole 'A' but a truncated 'F'. */
+std::optional<Order> parse_add_mpid(const uint8_t* buf, size_t buf_len, size_t offset);
+
+
+/* Parses a 'C' (Order Executed With Price) message. Decodes to the same
+OrderExecute as 'E'. The trailing printable flag and execution price are
+deliberately NOT decoded: they describe the trade, not the resting order,
+and the book reduces the level the order is stored at (from the order
+table), never the execution price. */
+std::optional<OrderExecute> parse_execute_price(const uint8_t* buf, size_t buf_len, size_t offset);
+
+
+/* Parses an 'X' (Order Cancel) message: a partial cancel of
+cancelledQuantity shares. OrderCancel is defined in include/types.h. */
+std::optional<OrderCancel> parse_cancel(const uint8_t* buf, size_t buf_len, size_t offset);

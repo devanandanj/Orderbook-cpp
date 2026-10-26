@@ -367,7 +367,9 @@ FodyWeavers.xsd
 
 # Model outputs
 trace.txt
+state.txt
 *.idea
 snapshot.bin
 *.mold
 /docs/redesign-plan.md
+sample/

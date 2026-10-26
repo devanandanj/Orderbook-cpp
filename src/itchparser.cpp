@@ -20,6 +20,20 @@ uint64_t read_u64_be(const uint8_t* buf, const size_t offset) {
 	return (static_cast<uint64_t>(read_u32_be(buf, offset)) << 32) | read_u32_be(buf, offset + 4);
 }
 
+/* decode_add
+   Field decode shared by 'A' and 'F', which agree on bytes 0..35. One
+   copy, so a fix to the add layout can never reach only one of them.
+   Callers have already checked the length and type byte.
+*/
+static Order decode_add(const uint8_t* buf, const size_t offset) {
+	Order order{};
+	order.orderId = read_u64_be(buf, offset + 11);
+	order.side = (buf[offset + 19] == 'B') ? Side::Buy : Side::Sell;
+	order.price = read_u32_be(buf, offset + 32);
+	order.quantity = read_u32_be(buf, offset + 20);
+	return order;
+}
+
 /* parse_add
    Decode an 'A' (Add Order) message from buf starting at offset.
    The function validates that a full ADD_ORDER_LEN bytes are available
@@ -36,16 +50,7 @@ std::optional<Order> parse_add(const uint8_t* buf, const size_t buf_len, const s
 		return std::nullopt;
 	}
 
-	/* Message Type at offset+0 ('A') — not read here; dispatch loop
-	   in main.cpp is responsible for routing based on this byte
-	   before calling parse_add. */
-
-	Order order{};
-	order.orderId = read_u64_be(buf, offset + 11);
-	order.side = (buf[offset + 19] == 'B') ? Side::Buy : Side::Sell;
-	order.price = read_u32_be(buf, offset + 32);
-	order.quantity = read_u32_be(buf, offset + 20);
-	return order;
+	return decode_add(buf, offset);
 }
 
 /* parse_delete
@@ -111,4 +116,65 @@ std::optional<OrderExecute> parse_execute(const uint8_t* buf, size_t buf_len, si
 	exec.matchId = read_u64_be(buf, offset + 23);
 
 	return exec;
+}
+
+/* parse_add_mpid
+   Decode an 'F' (Add Order with MPID). Bytes 0..35 are laid out exactly
+   like 'A', so it shares decode_add; the attribution at 36..39 is ignored.
+*/
+std::optional<Order> parse_add_mpid(const uint8_t* buf, const size_t buf_len, const size_t offset) {
+	if (offset + ADD_ORDER_MPID_LEN > buf_len)
+	{
+		return std::nullopt;
+	}
+
+	if (buf[offset] != 'F')
+	{
+		return std::nullopt;
+	}
+
+	return decode_add(buf, offset);
+}
+
+/* parse_execute_price
+   Decode a 'C' (Order Executed With Price). Bytes 0..30 match 'E'; the
+   printable flag (31) and execution price (32..35) describe the trade and
+   are deliberately not decoded -- the book reduces the order's own level.
+*/
+std::optional<OrderExecute> parse_execute_price(const uint8_t* buf, size_t buf_len, size_t offset) {
+	if (offset + ORDER_EXECUTE_PRICE_LEN > buf_len)
+	{
+		return std::nullopt;
+	}
+
+	if (buf[offset] != 'C')
+	{
+		return std::nullopt;
+	}
+	OrderExecute exec{};
+	exec.orderId = read_u64_be(buf, offset + 11);
+	exec.executedQuantity = read_u32_be(buf, offset + 19);
+	exec.matchId = read_u64_be(buf, offset + 23);
+
+	return exec;
+}
+
+/* parse_cancel
+   Decode an 'X' (Order Cancel): order reference and cancelled shares.
+*/
+std::optional<OrderCancel> parse_cancel(const uint8_t* buf, size_t buf_len, size_t offset) {
+	if (offset + ORDER_CANCEL_LEN > buf_len)
+	{
+		return std::nullopt;
+	}
+
+	if (buf[offset] != 'X')
+	{
+		return std::nullopt;
+	}
+	OrderCancel cancel{};
+	cancel.orderId = read_u64_be(buf, offset + 11);
+	cancel.cancelledQuantity = read_u32_be(buf, offset + 19);
+
+	return cancel;
 }

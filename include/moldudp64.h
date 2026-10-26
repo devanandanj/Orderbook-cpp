@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "../include/itchparser.h"
@@ -85,3 +86,30 @@ struct MoldUDPMessage
 	 the message payload.
 */
 std::vector<MoldUDPMessage> deframe_moldudp64(const uint8_t* buf, size_t buf_len);
+
+/* MoldPacket
+   One packet out of a stream of MoldUDP64 packets laid back to back (a
+   .mold file from tools/itch_to_mold.py, or test/gen_test.cpp). Each packet
+   is self-delimiting -- header message count plus per-message lengths --
+   so the stream needs no extra framing.
+   - sequence: sequence number of the packet's first message
+   - count: header message count (MOLDUDP64_HEARTBEAT or
+     MOLDUDP64_END_OF_SESSION for the control packets, which carry none)
+   - length: bytes the packet occupies, header included
+   - messages: views into the buffer, as from deframe_moldudp64
+*/
+struct MoldPacket
+{
+	uint64_t sequence;
+	uint16_t count;
+	size_t length;
+	std::vector<MoldUDPMessage> messages;
+};
+
+/* next_moldudp64_packet
+   Parses the packet that starts at buf. Returns nullopt when the header or
+   any message block runs past buf_len. Heartbeat and end-of-session packets
+   are returned (header only, no messages) so the caller decides what they
+   mean.
+*/
+std::optional<MoldPacket> next_moldudp64_packet(const uint8_t* buf, size_t buf_len);

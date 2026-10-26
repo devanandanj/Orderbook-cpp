@@ -13,15 +13,25 @@ using Price = std::uint32_t;
 using OrderId = std::uint64_t;
 using Quantity = std::uint32_t;
 
-/* Small aliases for counts used in the Orderbook. These are kept small
-   (uint8_t) because the book size in this example is limited to 64.
-*/
-using Bids = std::uint8_t;
-using Asks = std::uint8_t;
+/* Index into a side's price-level array (0 .. SLOTS-1). */
+using Slot = std::uint16_t;
 
-/* Book capacity per side. Must equal `max_orders_per_side` in the
-   hardware-orderbook wire-format spec (spec/snapshot.yaml); the spec's
-   test_spec.py greps this file to enforce that. Do not raise this past
-   what the spec's per-packet UDP MTU check allows -- currently 90.
+/* Book geometry. Each value must equal its counterpart in the
+   hardware-orderbook spec (spec/book.yaml); the spec's test_spec.py greps
+   this file to enforce that.
 */
-constexpr uint8_t MAX_ORDERS_PER_SIDE = 64;
+
+/* Order table: SETS x WAYS set-associative entries, set index = XOR-fold
+   of the ORN into HASH_W bits, plus a CAM_DEPTH-entry overflow CAM. */
+constexpr uint32_t HASH_W = 10;
+constexpr uint32_t WAYS = 3;
+constexpr uint32_t CAM_DEPTH = 16;
+constexpr uint32_t SETS = 1u << HASH_W;
+
+/* Price book: SLOTS levels per side, one PRICE_TICK apart, with the
+   session's base price at SLOT_CENTER. PRICE_TICK is in ITCH price units
+   (4 implied decimals), so 100 = $0.01. */
+constexpr uint32_t PRICE_TICK = 100;
+constexpr uint32_t SLOT_W = 14;
+constexpr uint32_t SLOTS = 1u << SLOT_W;
+constexpr uint32_t SLOT_CENTER = SLOTS / 2;

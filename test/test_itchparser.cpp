@@ -145,11 +145,83 @@ static void test_parse_execute() {
     printf("parse_execute (truncated): PASS -- correctly returned nullopt\n");
 }
 
+static void test_parse_add_mpid() {
+    /* Hand-built 'F' message, 40 bytes: an 'A' layout plus attribution. */
+    uint8_t buf[ADD_ORDER_MPID_LEN] = { 0 };
+
+    buf[0] = 'F';
+    buf[17] = 0x30; buf[18] = 0x39;                   /* orderId = 12345 */
+    buf[19] = 'S';
+    buf[23] = 100;                                     /* shares = 100 */
+    buf[33] = 0x03; buf[34] = 0xD0; buf[35] = 0x90;   /* price = 250000 */
+    buf[36] = 'G'; buf[37] = 'S'; buf[38] = 'C'; buf[39] = 'O';  /* MPID, ignored */
+
+    auto result = parse_add_mpid(buf, ADD_ORDER_MPID_LEN, 0);
+    assert(result.has_value());
+    assert(result->orderId == 12345);
+    assert(result->side == Side::Sell);
+    assert(result->quantity == 100);
+    assert(result->price == 250000);
+
+    /* 36 bytes is a whole 'A' but a truncated 'F'. */
+    assert(!parse_add_mpid(buf, ADD_ORDER_LEN, 0).has_value());
+    /* The type byte, not just the length, selects the parser. */
+    assert(!parse_add(buf, ADD_ORDER_MPID_LEN, 0).has_value());
+
+    printf("parse_add_mpid: PASS\n");
+}
+
+static void test_parse_execute_price() {
+    /* Hand-built 'C' message, 36 bytes. */
+    uint8_t buf[ORDER_EXECUTE_PRICE_LEN] = { 0 };
+
+    buf[0] = 'C';
+    buf[16] = 0x01; buf[17] = 0x81; buf[18] = 0xCD;  /* orderId = 98765 */
+    buf[22] = 50;                                     /* executed = 50 */
+    buf[28] = 0x01; buf[29] = 0xB6; buf[30] = 0x69;  /* matchId = 112233 */
+    buf[31] = 'Y';
+    /* Trade price all-ones: proves nothing decoded leaks from it. */
+    buf[32] = 0xFF; buf[33] = 0xFF; buf[34] = 0xFF; buf[35] = 0xFF;
+
+    auto result = parse_execute_price(buf, ORDER_EXECUTE_PRICE_LEN, 0);
+    assert(result.has_value());
+    assert(result->orderId == 98765);
+    assert(result->executedQuantity == 50);
+    assert(result->matchId == 112233);
+
+    assert(!parse_execute_price(buf, ORDER_EXECUTE_LEN, 0).has_value());
+    assert(!parse_execute(buf, ORDER_EXECUTE_PRICE_LEN, 0).has_value());
+
+    printf("parse_execute_price: PASS\n");
+}
+
+static void test_parse_cancel() {
+    /* Hand-built 'X' message, 23 bytes. */
+    uint8_t buf[ORDER_CANCEL_LEN] = { 0 };
+
+    buf[0] = 'X';
+    buf[17] = 0xD4; buf[18] = 0x31;   /* orderId = 54321 */
+    buf[21] = 0x01; buf[22] = 0x2C;   /* cancelled = 300 */
+
+    auto result = parse_cancel(buf, ORDER_CANCEL_LEN, 0);
+    assert(result.has_value());
+    assert(result->orderId == 54321);
+    assert(result->cancelledQuantity == 300);
+
+    /* One byte short is the boundary an off-by-one would get wrong. */
+    assert(!parse_cancel(buf, ORDER_CANCEL_LEN - 1, 0).has_value());
+
+    printf("parse_cancel: PASS\n");
+}
+
 int main() {
     test_parse_add();
     test_parse_delete();
     test_parse_replace();
     test_parse_execute();
+    test_parse_add_mpid();
+    test_parse_execute_price();
+    test_parse_cancel();
 
     printf("\nAll itchparser tests PASSED\n");
     return 0;
